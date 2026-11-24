@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quick_connect_last"
+        android:enabled="true"
+        android:icon="@drawable/ic_k2p_monochrome"
+        android:shortcutShortLabel="@string/shortcut_quick_connect_short"
+        android:shortcutLongLabel="@string/shortcut_quick_connect_long">
+        <intent
+            android:action="space.k2p.action.QUICK_CONNECT"
+            android:targetPackage="space.k2p"
+            android:targetClass="space.k2p.MainActivity" />
+    </shortcut>
+</shortcuts>

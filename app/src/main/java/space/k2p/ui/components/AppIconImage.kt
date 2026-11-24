@@ -1,0 +1,63 @@
+package space.k2p.ui.components
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun AppIconImage(
+    drawable: Drawable?,
+    contentDescription: String?,
+    modifier: Modifier = Modifier
+) {
+    val bitmap = remember(drawable) {
+        drawable?.let { d ->
+            try {
+                if (d is BitmapDrawable && d.bitmap != null) {
+                    d.bitmap
+                } else {
+                    val width = if (d.intrinsicWidth > 0) d.intrinsicWidth else 96
+                    val height = if (d.intrinsicHeight > 0) d.intrinsicHeight else 96
+                    val b = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(b)
+                    d.setBounds(0, 0, canvas.width, canvas.height)
+                    d.draw(canvas)
+                    b
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = contentDescription,
+            modifier = modifier
+        )
+    } else {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Default.Android,
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}

@@ -1,0 +1,154 @@
+name: Auto-update Core & Geodata
+
+on:
+  schedule:
+    - cron: '0 4 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-update:
+    name: Check Updates for Xray & RU Geodata
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check and Update Dependencies
+        id: updater
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - << 'EOF'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          headers = {
+              "User-Agent": "K2P-VPN-Actions",
+              "Accept": "application/vnd.github.v3+json"
+          }
+          token = os.environ.get("GITHUB_TOKEN")
+          if token:
+              headers["Authorization"] = f"Bearer {token}"
+
+          def fetch_json(url):
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req) as resp:
+                  return json.loads(resp.read().decode())
+
+          def download_file(url, dest):
+              print(f"Downloading {url} to {dest}...")
+              req = urllib.request.Request(url, headers={"User-Agent": "K2P-VPN-Actions"})
+              with urllib.request.urlopen(req) as resp, open(dest, "wb") as f:
+                  f.write(resp.read())
+
+          versions_file = ".github/versions.json"
+          with open(versions_file, "r") as f:
+              versions = json.load(f)
+
+          current_xray_tag = versions.get("xray_tag", "")
+          current_geodata_sha = versions.get("geodata_sha", "")
+
+          updated = False
+          reasons = []
+
+          # 1. Check AndroidLibXrayLite
+          try:
+              xray_release = fetch_json("https://api.github.com/repos/2dust/AndroidLibXrayLite/releases/latest")
+              latest_xray_tag = xray_release.get("tag_name", "")
+              if latest_xray_tag and latest_xray_tag != current_xray_tag:
+                  print(f"New Xray release found: {latest_xray_tag} (current: {current_xray_tag})")
+                  # Find aar asset
+                  aar_asset = next((a for a in xray_release.get("assets", []) if a["name"].endswith(".aar")), None)
+                  if aar_asset:
+                      os.makedirs("app/libs", exist_ok=True)
+                      download_file(aar_asset["browser_download_url"], "app/libs/libv2ray.aar")
+                      versions["xray_tag"] = latest_xray_tag
+                      updated = True
+                      reasons.append(f"Xray {latest_xray_tag}")
+          except Exception as e:
+              print(f"Failed to check Xray release: {e}")
+
+          # 2. Check russia-v2ray-rules-dat
+          try:
+              commit_data = fetch_json("https://api.github.com/repos/runetfreedom/russia-v2ray-rules-dat/commits/release")
+              latest_sha = commit_data.get("sha", "")
+              if latest_sha and latest_sha != current_geodata_sha:
+                  print(f"New RU geodata commit found: {latest_sha[:8]} (current: {current_geodata_sha[:8]})")
+                  os.makedirs("app/src/main/assets", exist_ok=True)
+                  download_file("https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat", "app/src/main/assets/geoip.dat")
+                  download_file("https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat", "app/src/main/assets/geosite.dat")
+                  versions["geodata_sha"] = latest_sha
+                  updated = True
+                  reasons.append(f"RU rules {latest_sha[:7]}")
+          except Exception as e:
+              print(f"Failed to check geodata: {e}")
+
+          if not updated:
+              print("No updates found.")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as gh_out:
+                  gh_out.write("has_updates=false\n")
+              exit(0)
+
+          # Save versions.json
+          with open(versions_file, "w") as f:
+              json.dump(versions, f, indent=2)
+
+          # 3. Increment app/build.gradle.kts
+          gradle_path = "app/build.gradle.kts"
+          with open(gradle_path, "r", encoding="utf-8") as f:
+              gradle_content = f.read()
+
+          code_match = re.search(r'versionCode\s*=\s*(\d+)', gradle_content)
+          old_code = int(code_match.group(1)) if code_match else 6
+          new_code = old_code + 1
+          gradle_content = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {new_code}', gradle_content, count=1)
+
+          name_match = re.search(r'versionName\s*=\s*"(\d+)\.(\d+)\.(\d+)([^"]*)"', gradle_content)
+          if name_match:
+              major = name_match.group(1)
+              minor = name_match.group(2)
+              patch = int(name_match.group(3)) + 1
+              suffix = name_match.group(4)
+              new_name = f"{major}.{minor}.{patch}{suffix}"
+              tag_name = f"v{major}.{minor}.{patch}-beta"
+          else:
+              new_name = "0.6.1 BETA"
+              tag_name = "v0.6.1-beta"
+
+          gradle_content = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "{new_name}"', gradle_content, count=1)
+
+          with open(gradle_path, "w", encoding="utf-8") as f:
+              f.write(gradle_content)
+
+          print(f"Updated app version: {new_code} ({new_name}), tag: {tag_name}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as gh_out:
+              gh_out.write("has_updates=true\n")
+              gh_out.write(f"version_name={new_name}\n")
+              gh_out.write(f"tag_name={tag_name}\n")
+              gh_out.write(f"commit_msg=chore(core): auto-update {', '.join(reasons)} to {new_name} [skip ci]\n")
+          EOF
+
+      - name: Commit and Push Updates
+        if: steps.updater.outputs.has_updates == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/versions.json app/build.gradle.kts app/libs/libv2ray.aar app/src/main/assets/
+          git commit -m "${{ steps.updater.outputs.commit_msg }}"
+          git push origin HEAD:${{ github.ref_name }}
+          git tag "${{ steps.updater.outputs.tag_name }}"
+          git push origin "${{ steps.updater.outputs.tag_name }}"
