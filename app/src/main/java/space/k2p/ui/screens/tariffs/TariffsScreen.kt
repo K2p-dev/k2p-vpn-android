@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -152,7 +153,12 @@ fun TariffsScreen(
                             text = if (isPremium) "Подписка активна" else "Подписка не активна",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (isPremium) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            color = if (isPremium) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
                         )
 
                         SuggestionChip(
@@ -161,7 +167,9 @@ fun TariffsScreen(
                                 Text(
                                     text = if (isPremium) "Осталось: ${profile?.daysLeft ?: 0} дн." else "Требуется продление",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             },
                             colors = SuggestionChipDefaults.suggestionChipColors(
@@ -306,15 +314,22 @@ fun TariffCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             text = tariff.title,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
                         )
 
                         if (tariff.months == 12) {
-                            Spacer(modifier = Modifier.width(8.dp))
                             SuggestionChip(
                                 onClick = {},
                                 label = {
@@ -326,7 +341,13 @@ fun TariffCard(
                                             tint = BrandCrimson
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("ХИТ", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                                        Text(
+                                            text = "ХИТ",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
                                     }
                                 },
                                 colors = SuggestionChipDefaults.suggestionChipColors(
@@ -336,11 +357,16 @@ fun TariffCard(
                                 border = null
                             )
                         } else if (isTrial) {
-                            Spacer(modifier = Modifier.width(8.dp))
                             SuggestionChip(
                                 onClick = {},
                                 label = {
-                                    Text("5 ДНЕЙ", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "5 ДНЕЙ",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 },
                                 colors = SuggestionChipDefaults.suggestionChipColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -361,6 +387,8 @@ fun TariffCard(
                     }
                 }
 
+                Spacer(modifier = Modifier.width(8.dp))
+
                 // Prices
                 Column(horizontalAlignment = Alignment.End) {
                     if (hasDiscount) {
@@ -369,7 +397,9 @@ fun TariffCard(
                             style = MaterialTheme.typography.bodySmall.copy(
                                 textDecoration = TextDecoration.LineThrough
                             ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
 
@@ -377,7 +407,9 @@ fun TariffCard(
                         text = "${tariff.finalPrice} ₽",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }

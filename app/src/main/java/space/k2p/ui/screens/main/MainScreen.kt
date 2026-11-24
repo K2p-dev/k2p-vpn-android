@@ -993,13 +993,24 @@ fun MainScreen(
                                                         text = device.deviceName ?: "Устройство",
                                                         style = MaterialTheme.typography.bodyLarge,
                                                         fontWeight = FontWeight.SemiBold,
-                                                        color = MaterialTheme.colorScheme.onSurface
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f, fill = false)
                                                     )
                                                     if (device.isCurrent) {
                                                         Spacer(modifier = Modifier.width(6.dp))
                                                         SuggestionChip(
                                                             onClick = {},
-                                                            label = { Text("Это устройство", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                                            label = {
+                                                                Text(
+                                                                    text = "Это устройство",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    maxLines = 1,
+                                                                    softWrap = false
+                                                                )
+                                                            },
                                                             colors = SuggestionChipDefaults.suggestionChipColors(
                                                                 containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                                                                 labelColor = MaterialTheme.colorScheme.primary

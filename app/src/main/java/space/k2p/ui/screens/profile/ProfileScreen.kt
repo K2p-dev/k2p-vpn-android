@@ -424,7 +424,13 @@ fun ProfileScreen(
                                                     tint = MaterialTheme.colorScheme.primary
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Это устройство", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = "Это устройство",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
                                             }
                                         },
                                         colors = SuggestionChipDefaults.suggestionChipColors(
