@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -38,9 +39,12 @@ class AppUpdateWorker(
                         prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, info.latestVersion).apply()
                     }
                 }
+            }.onFailure { error ->
+                Log.e("AppUpdateWorker", "Update check failed: ${error.message}", error)
             }
             Result.success()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("AppUpdateWorker", "Unexpected error during update check: ${e.message}", e)
             Result.retry()
         }
     }

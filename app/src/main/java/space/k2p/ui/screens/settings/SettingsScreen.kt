@@ -1,5 +1,6 @@
 package space.k2p.ui.screens.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -215,59 +216,23 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        FilterChip(
-                            selected = uiState.themeConfig.themeMode == ThemeMode.DARK,
+                        SettingsOptionButton(
+                            text = "Тёмная",
+                            isSelected = uiState.themeConfig.themeMode == ThemeMode.DARK,
                             onClick = { viewModel.setThemeMode(ThemeMode.DARK) },
-                            label = {
-                                Text(
-                                    "Тёмная",
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandCrimson.copy(alpha = 0.2f),
-                                selectedLabelColor = BrandCrimson
-                            )
+                            modifier = Modifier.weight(1f)
                         )
-                        FilterChip(
-                            selected = uiState.themeConfig.themeMode == ThemeMode.LIGHT,
+                        SettingsOptionButton(
+                            text = "Светлая",
+                            isSelected = uiState.themeConfig.themeMode == ThemeMode.LIGHT,
                             onClick = { viewModel.setThemeMode(ThemeMode.LIGHT) },
-                            label = {
-                                Text(
-                                    "Светлая",
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandCrimson.copy(alpha = 0.2f),
-                                selectedLabelColor = BrandCrimson
-                            )
+                            modifier = Modifier.weight(1f)
                         )
-                        FilterChip(
-                            selected = uiState.themeConfig.themeMode == ThemeMode.SYSTEM,
+                        SettingsOptionButton(
+                            text = "Системная",
+                            isSelected = uiState.themeConfig.themeMode == ThemeMode.SYSTEM,
                             onClick = { viewModel.setThemeMode(ThemeMode.SYSTEM) },
-                            label = {
-                                Text(
-                                    "Системная",
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandCrimson.copy(alpha = 0.2f),
-                                selectedLabelColor = BrandCrimson
-                            )
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -300,59 +265,26 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        FilterChip(
-                            selected = uiState.themeConfig.accentMode == AccentMode.BRAND,
+                        SettingsOptionButton(
+                            text = "Фирменный",
+                            isSelected = uiState.themeConfig.accentMode == AccentMode.BRAND,
                             onClick = { viewModel.setAccentMode(AccentMode.BRAND) },
-                            label = {
-                                Text(
-                                    "Фирменный",
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = BrandCrimson.copy(alpha = 0.2f),
-                                selectedLabelColor = BrandCrimson
-                            )
+                            activeColor = BrandCrimson,
+                            modifier = Modifier.weight(1f)
                         )
-                        FilterChip(
-                            selected = uiState.themeConfig.accentMode == AccentMode.DYNAMIC,
+                        SettingsOptionButton(
+                            text = "Material You",
+                            isSelected = uiState.themeConfig.accentMode == AccentMode.DYNAMIC,
                             onClick = { viewModel.setAccentMode(AccentMode.DYNAMIC) },
-                            label = {
-                                Text(
-                                    "Material You",
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary
-                            )
+                            activeColor = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
                         )
-                        FilterChip(
-                            selected = uiState.themeConfig.accentMode == AccentMode.CUSTOM,
+                        SettingsOptionButton(
+                            text = "Свой цвет",
+                            isSelected = uiState.themeConfig.accentMode == AccentMode.CUSTOM,
                             onClick = { viewModel.setAccentMode(AccentMode.CUSTOM) },
-                            label = {
-                                Text(
-                                    "Свой цвет",
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary
-                            )
+                            activeColor = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
                         )
                     }
 
@@ -766,5 +698,38 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun SettingsOptionButton(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    activeColor: Color = BrandCrimson
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (isSelected) activeColor.copy(alpha = 0.15f) else Color.Transparent,
+            contentColor = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurface
+        ),
+        border = BorderStroke(
+            width = if (isSelected) 1.5.dp else 1.dp,
+            color = if (isSelected) activeColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        )
+    ) {
+        Text(
+            text = text,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

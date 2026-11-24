@@ -25,7 +25,7 @@ android {
         buildConfigField("String", "OFFER_URL", "\"https://pay.proksbro.space/offer\"")
         buildConfigField("String", "BOT_URL", "\"https://t.me/easyforeasy_bot\"")
         buildConfigField("String", "SUPPORT_URL", "\"https://t.me/two_fingers_suport\"")
-        buildConfigField("String", "GITHUB_RELEASES_API", "\"https://api.github.com/repos/K2p-dev/k2p-vpn-android/releases/latest\"")
+        buildConfigField("String", "GITHUB_RELEASES_API", "\"https://api.github.com/repos/K2p-dev/k2p-vpn-android/releases?per_page=1\"")
         buildConfigField("int", "SUB_AUTO_UPDATE_HOURS", "6")
         buildConfigField("int", "MAX_DEVICES", "4")
     }

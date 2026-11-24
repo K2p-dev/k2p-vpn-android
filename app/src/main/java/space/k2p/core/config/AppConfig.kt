@@ -16,7 +16,7 @@ object AppConfig {
     const val BOT_URL: String = "https://t.me/easyforeasy_bot"
     const val SUPPORT_URL: String = "https://t.me/two_fingers_suport"
 
-    const val GITHUB_RELEASES_API: String = "https://api.github.com/repos/K2p-dev/k2p-vpn-android/releases/latest"
+    const val GITHUB_RELEASES_API: String = "https://api.github.com/repos/K2p-dev/k2p-vpn-android/releases?per_page=1"
 
     const val SUB_AUTO_UPDATE_HOURS: Long = 6L
     const val MAX_DEVICES: Int = 4
