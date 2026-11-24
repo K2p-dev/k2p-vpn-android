@@ -12,6 +12,9 @@ jobs:
   check-and-update:
     name: Check Updates for Xray & RU Geodata
     runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.updater.outputs.has_updates }}
+      tag_name: ${{ steps.updater.outputs.tag_name }}
 
     steps:
       - name: Checkout Repository
@@ -70,7 +73,6 @@ jobs:
               latest_xray_tag = xray_release.get("tag_name", "")
               if latest_xray_tag and latest_xray_tag != current_xray_tag:
                   print(f"New Xray release found: {latest_xray_tag} (current: {current_xray_tag})")
-                  # Find aar asset
                   aar_asset = next((a for a in xray_release.get("assets", []) if a["name"].endswith(".aar")), None)
                   if aar_asset:
                       os.makedirs("app/libs", exist_ok=True)
@@ -102,7 +104,6 @@ jobs:
                   gh_out.write("has_updates=false\n")
               exit(0)
 
-          # Save versions.json
           with open(versions_file, "w") as f:
               json.dump(versions, f, indent=2)
 
@@ -152,3 +153,12 @@ jobs:
           git push origin HEAD:${{ github.ref_name }}
           git tag "${{ steps.updater.outputs.tag_name }}"
           git push origin "${{ steps.updater.outputs.tag_name }}"
+
+  trigger-release:
+    name: Build & Publish Updated APK
+    needs: check-and-update
+    if: needs.check-and-update.outputs.has_updates == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag_name: ${{ needs.check-and-update.outputs.tag_name }}
+    secrets: inherit
