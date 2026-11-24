@@ -33,25 +33,33 @@ class NetworkModule(
 
     private val authHeadersInterceptor = Interceptor { chain ->
         val original = chain.request()
-        val builder = original.newBuilder()
+        val host = original.url.host
 
-        // Pass HWID and Device Name headers on every request
-        builder.header("X-Device-HWID", DeviceSecurity.getHardwareId(context))
-        builder.header("X-Device-Name", DeviceSecurity.getDeviceName())
+        // Attach Authorization and device headers ONLY to our own backend domain
+        if (host.endsWith("proksbro.space")) {
+            val builder = original.newBuilder()
 
-        // Pass Authorization if token is present
-        val token = tokenStorage.getJwtSync()
-        if (!token.isNullOrBlank() && original.header("Authorization") == null) {
-            builder.header("Authorization", "Bearer $token")
+            // Pass HWID and Device Name headers on every request to our API
+            builder.header("X-Device-HWID", DeviceSecurity.getHardwareId(context))
+            builder.header("X-Device-Name", DeviceSecurity.getDeviceName())
+
+            // Pass Authorization if token is present
+            val token = tokenStorage.getJwtSync()
+            if (!token.isNullOrBlank() && original.header("Authorization") == null) {
+                builder.header("Authorization", "Bearer $token")
+            }
+
+            chain.proceed(builder.build())
+        } else {
+            chain.proceed(original)
         }
-
-        chain.proceed(builder.build())
     }
 
     private val auth401Interceptor = Interceptor { chain ->
-        val response = chain.proceed(chain.request())
+        val request = chain.request()
+        val response = chain.proceed(request)
 
-        if (response.code == 401) {
+        if (response.code == 401 && request.url.host.endsWith("proksbro.space")) {
             val peekedBody = try {
                 response.peekBody(2048).string()
             } catch (_: Exception) {
@@ -105,5 +113,27 @@ class NetworkModule(
     val authApiService: AuthApiService = retrofit.create(AuthApiService::class.java)
     val clientApiService: ClientApiService = retrofit.create(ClientApiService::class.java)
     val paymentApiService: PaymentApiService = retrofit.create(PaymentApiService::class.java)
-    val githubApiService: GithubApiService = retrofit.create(GithubApiService::class.java)
+
+    // Separate clean OkHttpClient and Retrofit for GitHub API without auth headers
+    val githubOkHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "K2P-VPN-Android")
+                .build()
+            chain.proceed(request)
+        }
+        .addInterceptor(loggingInterceptor)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    private val githubRetrofit: Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.github.com/")
+        .client(githubOkHttpClient)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+
+    val githubApiService: GithubApiService = githubRetrofit.create(GithubApiService::class.java)
 }

@@ -26,6 +26,11 @@ class AppUpdateRepository(
                     val cleanLatest = release.tagName.removePrefix("v").trim()
                     val currentVersion = BuildConfig.VERSION_NAME
 
+                    val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
+                    val directDownloadUrl = apkAsset?.browserDownloadUrl?.takeIf { it.isNotBlank() }
+                        ?: release.htmlUrl
+                        ?: AppConfig.GITHUB_RELEASES_API
+
                     val isNewer = isVersionNewer(cleanLatest, currentVersion)
                     Result.success(
                         AppUpdateInfo(
@@ -34,7 +39,7 @@ class AppUpdateRepository(
                             currentVersion = "v$currentVersion",
                             releaseTitle = release.name ?: release.tagName,
                             releaseNotes = release.body.orEmpty(),
-                            downloadUrl = release.htmlUrl ?: AppConfig.GITHUB_RELEASES_API
+                            downloadUrl = directDownloadUrl
                         )
                     )
                 } else {
