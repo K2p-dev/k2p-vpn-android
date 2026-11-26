@@ -79,20 +79,38 @@ object AppLogger {
         log(tag, LogLevel.ERROR, message, throwable)
     }
 
+    private val bearerRegex = Regex("(?i)(Bearer\\s+)[A-Za-z0-9._-]+")
+    private val secretFieldRegex = Regex("(?i)(\"(?:session_secret|token|jwt|password)\"\\s*:\\s*\")[^\"]+(\")")
+    private val kvSecretRegex = Regex("(?i)((?:session_secret|SessionContext|EncryptionKeyFile|doc_url)\\s*[=:]\\s*)\\S+")
+    private val docUrlRegex = Regex("https://(?:[a-zA-Z0-9-]+\\.)*(?:yandex\\.(?:ru|com)|yadi\\.sk|mail\\.ru)/\\S*")
+
+    internal fun redact(input: String): String {
+        return input
+            .replace(bearerRegex, "$1***")
+            .replace(secretFieldRegex, "$1***$2")
+            .replace(kvSecretRegex, "$1***")
+            .replace(docUrlRegex) { match ->
+                val url = match.value
+                val hostEnd = url.indexOf('/', startIndex = "https://".length)
+                if (hostEnd > 0) "${url.substring(0, hostEnd)}/***" else "https://***"
+            }
+    }
+
     private fun log(tag: LogTag, level: LogLevel, message: String, throwable: Throwable?) {
+        val safeMessage = redact(message)
         val androidTag = "K2P-${tag.label}"
         when (level) {
-            LogLevel.DEBUG -> Log.d(androidTag, message, throwable)
-            LogLevel.INFO -> Log.i(androidTag, message, throwable)
-            LogLevel.WARN -> Log.w(androidTag, message, throwable)
-            LogLevel.ERROR -> Log.e(androidTag, message, throwable)
+            LogLevel.DEBUG -> Log.d(androidTag, safeMessage, throwable)
+            LogLevel.INFO -> Log.i(androidTag, safeMessage, throwable)
+            LogLevel.WARN -> Log.w(androidTag, safeMessage, throwable)
+            LogLevel.ERROR -> Log.e(androidTag, safeMessage, throwable)
         }
 
         val fullMessage = if (throwable != null) {
-            val stack = Log.getStackTraceString(throwable).trim()
-            if (stack.isNotBlank()) "$message\n$stack" else "$message: ${throwable.message}"
+            val stack = redact(Log.getStackTraceString(throwable).trim())
+            if (stack.isNotBlank()) "$safeMessage\n$stack" else "$safeMessage: ${redact(throwable.message.orEmpty())}"
         } else {
-            message
+            safeMessage
         }
 
         val timestamp = LocalTime.now().format(timeFormatter)

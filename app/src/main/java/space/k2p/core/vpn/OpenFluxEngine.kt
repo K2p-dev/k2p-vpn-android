@@ -64,8 +64,8 @@ object OpenFluxEngine {
         }
 
         val docUrl = emergencyState.docUrl.trim()
-        if (docUrl.isBlank()) {
-            val msg = "URL документа не задан"
+        if (docUrl.isBlank() || docUrl.contains('\n') || docUrl.contains('\r')) {
+            val msg = "URL документа не задан или содержит недопустимые символы"
             AppLogger.e(LogTag.OPENFLUX, msg)
             return Result.failure(IllegalArgumentException(msg))
         }
@@ -80,11 +80,15 @@ object OpenFluxEngine {
         val workDir = File(context.cacheDir, "openflux").apply { mkdirs() }
         workDirRef = workDir
 
-        val secret = emergencyState.sessionSecret.trim()
+        val secret = emergencyState.sessionSecret.trim().replace("\r", "").replace("\n", "")
         var secretFile: File? = null
         if (secret.length >= 16) {
             secretFile = File(workDir, "session.key").apply {
                 writeText(secret, Charsets.UTF_8)
+                setReadable(false, false)
+                setReadable(true, true)
+                setWritable(false, false)
+                setWritable(true, true)
             }
         } else if (secret.isNotBlank()) {
             AppLogger.w(
@@ -109,7 +113,13 @@ object OpenFluxEngine {
             }
             appendLine("Debug = 2")
         }
-        confFile.writeText(confContent, Charsets.UTF_8)
+        confFile.apply {
+            writeText(confContent, Charsets.UTF_8)
+            setReadable(false, false)
+            setReadable(true, true)
+            setWritable(false, false)
+            setWritable(true, true)
+        }
 
         val dnsServer = resolvePhysicalDns(context)
         AppLogger.i(

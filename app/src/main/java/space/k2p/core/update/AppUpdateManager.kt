@@ -2,9 +2,11 @@ package space.k2p.core.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import java.security.MessageDigest
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -128,11 +130,11 @@ class AppUpdateManager(
     }
 
     fun startDownload() {
-        val url = _state.value.apkDownloadUrl
-        if (url.isBlank()) {
-            AppLogger.e(LogTag.OTA, "Отмена загрузки: ссылка на APK пустая")
+        val url = _state.value.apkDownloadUrl.trim()
+        if (url.isBlank() || !url.startsWith("https://", ignoreCase = true)) {
+            AppLogger.e(LogTag.OTA, "Отмена загрузки: небезопасная или пустая ссылка на APK")
             _state.update {
-                it.copy(downloadState = OtaDownloadState.Error("Ссылка для скачивания APK не найдена"))
+                it.copy(downloadState = OtaDownloadState.Error("Допустимы только HTTPS-ссылки для загрузки APK"))
             }
             return
         }
@@ -282,6 +284,15 @@ class AppUpdateManager(
             return InstallLaunchResult.REQUESTED_UNKNOWN_SOURCES_PERMISSION
         }
 
+        if (!verifyApkSignatureMatchesCurrentApp(context, apkFile)) {
+            AppLogger.e(LogTag.OTA, "Подпись скачанного APK не совпадает с подписью приложения")
+            runCatching { apkFile.delete() }
+            _state.update {
+                it.copy(downloadState = OtaDownloadState.Error("Ошибка проверки подписи APK"))
+            }
+            return InstallLaunchResult.ERROR
+        }
+
         return try {
             val authority = "${context.packageName}.fileprovider"
             val contentUri = FileProvider.getUriForFile(context, authority, apkFile)
@@ -301,6 +312,38 @@ class AppUpdateManager(
 
     private fun getUpdateApkFile(): File {
         return File(File(appContext.cacheDir, "updates"), "k2p-update.apk")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifyApkSignatureMatchesCurrentApp(context: Context, apkFile: File): Boolean {
+        return try {
+            val pm = context.packageManager
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                PackageManager.GET_SIGNATURES
+            }
+            val currentInfo = pm.getPackageInfo(context.packageName, flags)
+            val archiveInfo = pm.getPackageArchiveInfo(apkFile.absolutePath, flags) ?: return false
+
+            fun extractDigests(info: android.content.pm.PackageInfo): Set<String> {
+                val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    info.signingInfo?.apkContentsSigners ?: info.signingInfo?.signingCertificateHistory
+                } else {
+                    info.signatures
+                } ?: return emptySet()
+                val md = MessageDigest.getInstance("SHA-256")
+                return sigs.map { sig ->
+                    md.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
+                }.toSet()
+            }
+
+            val currentDigests = extractDigests(currentInfo)
+            val archiveDigests = extractDigests(archiveInfo)
+            currentDigests.isNotEmpty() && currentDigests == archiveDigests
+        } catch (_: Exception) {
+            false
+        }
     }
 
     internal fun parseChangelog(rawBody: String?): List<String> {
