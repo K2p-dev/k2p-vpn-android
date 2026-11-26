@@ -25,11 +25,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -65,17 +65,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import space.k2p.ui.components.BrandBackground
-import kotlin.math.roundToInt
 
 @Composable
 fun CaseMiniGameScreen(
@@ -629,32 +631,33 @@ private fun RouletteOverlay(
     onSell: () -> Unit
 ) {
     val density = LocalDensity.current
-    val tileWidthDp = 148.dp
-    val tileSpacingDp = 10.dp
+    val tileWidthDp = 116.dp
+    val tileHeightDp = 124.dp
+    val tileSpacingDp = 8.dp
     val tileWidthPx = with(density) { tileWidthDp.toPx() }
     val tileSpacingPx = with(density) { tileSpacingDp.toPx() }
     val stridePx = tileWidthPx + tileSpacingPx
 
     val scrollOffset = remember(session.openingCase.id) { Animatable(0f) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.84f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {}
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        contentAlignment = Alignment.Center
+    Dialog(
+        onDismissRequest = {
+            if (session.spinComplete) {
+                onClaim()
+            }
+        },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = session.spinComplete,
+            dismissOnClickOutside = false
+        )
     ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
         ) {
             Column(
@@ -671,14 +674,14 @@ private fun RouletteOverlay(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Horizontal Roulette Tape with center vertical pointer
+                // Horizontal Roulette Tape with fixed BoxWithConstraints + unbounded Row + graphicsLayer translationX
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(142.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                        .height(136.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
                         .clipToBounds()
                 ) {
                     val containerWidthPx = with(density) { maxWidth.toPx() }
@@ -686,7 +689,7 @@ private fun RouletteOverlay(
                     LaunchedEffect(session.openingCase.id, containerWidthPx) {
                         if (containerWidthPx > 0f) {
                             val centerOfTargetTile = session.winningIndexInTape * stridePx + (tileWidthPx / 2f)
-                            val subOffset = session.subTileOffsetFraction * (tileWidthPx * 0.35f)
+                            val subOffset = session.subTileOffsetFraction.coerceIn(-0.25f, 0.25f) * tileWidthPx
                             val targetScrollPx = (centerOfTargetTile + subOffset) - (containerWidthPx / 2f)
 
                             if (session.spinComplete) {
@@ -696,10 +699,11 @@ private fun RouletteOverlay(
                                 scrollOffset.animateTo(
                                     targetValue = targetScrollPx,
                                     animationSpec = tween(
-                                        durationMillis = 4500,
-                                        easing = CubicBezierEasing(0.10f, 0.86f, 0.18f, 1.0f)
+                                        durationMillis = 4200,
+                                        easing = CubicBezierEasing(0.12f, 0.85f, 0.22f, 1.0f)
                                     )
                                 )
+                                delay(400)
                                 onSpinFinished()
                             }
                         }
@@ -707,20 +711,23 @@ private fun RouletteOverlay(
 
                     Row(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .offset { IntOffset(-scrollOffset.value.roundToInt(), 0) }
-                            .padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(tileSpacingDp)
+                            .align(Alignment.CenterStart)
+                            .wrapContentWidth(unbounded = true, align = Alignment.Start)
+                            .graphicsLayer {
+                                translationX = -scrollOffset.value
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(tileSpacingDp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         session.tapeItems.forEach { item ->
                             val itemRarityColor = Color(item.rarity.accentArgb)
                             Box(
                                 modifier = Modifier
                                     .width(tileWidthDp)
-                                    .fillMaxHeight()
+                                    .height(tileHeightDp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(MaterialTheme.colorScheme.surface)
-                                    .border(1.5.dp, itemRarityColor.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                    .border(1.5.dp, itemRarityColor.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
                                     .padding(8.dp)
                             ) {
                                 Column(
@@ -728,25 +735,28 @@ private fun RouletteOverlay(
                                     verticalArrangement = Arrangement.SpaceBetween,
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Box(
+                                    WeaponSkinCanvas(
+                                        weaponType = item.weaponType,
+                                        rarity = item.rarity,
+                                        skinStyle = item.style,
+                                        animateShader = false,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .weight(1f)
-                                    ) {
-                                        WeaponSkinCanvas(
-                                            weaponType = item.weaponType,
-                                            rarity = item.rarity,
-                                            skinStyle = item.style,
-                                            animateShader = false,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                            .height(68.dp)
+                                    )
                                     Text(
                                         text = item.weaponType.displayName,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = itemRarityColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = item.rarity.displayName,
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -755,13 +765,13 @@ private fun RouletteOverlay(
                         }
                     }
 
-                    // Center vertical pointer line
+                    // Center white pointer line
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)
                             .width(3.dp)
                             .fillMaxHeight()
-                            .background(MaterialTheme.colorScheme.primary)
+                            .background(Color.White)
                     )
                 }
 

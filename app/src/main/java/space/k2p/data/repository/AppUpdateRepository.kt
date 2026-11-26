@@ -4,6 +4,7 @@ import space.k2p.BuildConfig
 import space.k2p.core.config.AppConfig
 import space.k2p.core.logging.AppLogger
 import space.k2p.core.logging.LogTag
+import space.k2p.core.update.AppUpdateManager
 import space.k2p.data.api.GithubApiService
 
 data class AppUpdateInfo(
@@ -36,7 +37,7 @@ class AppUpdateRepository(
                         ?: release.htmlUrl
                         ?: AppConfig.GITHUB_RELEASES_API
 
-                    val isNewer = isVersionNewer(cleanLatest, currentVersion)
+                    val isNewer = AppUpdateManager.isVersionNewer(cleanLatest, currentVersion)
                     AppLogger.i(
                         LogTag.OTA,
                         "Релиз найден: ${release.tagName} (текущая v$currentVersion), обновление=$isNewer, apkAsset=${apkAsset?.name ?: "нет"}"
@@ -67,19 +68,5 @@ class AppUpdateRepository(
             AppLogger.e(LogTag.OTA, "Сетевая ошибка при проверке обновлений: $detail", e)
             Result.failure(Exception("Ошибка сети при проверке обновлений: $detail", e))
         }
-    }
-
-    private fun isVersionNewer(latest: String, current: String): Boolean {
-        val latestParts = latest.split(".", "-", " ").mapNotNull { it.toIntOrNull() }
-        val currentParts = current.split(".", "-", " ").mapNotNull { it.toIntOrNull() }
-
-        val maxLen = maxOf(latestParts.size, currentParts.size)
-        for (i in 0 until maxLen) {
-            val l = latestParts.getOrElse(i) { 0 }
-            val c = currentParts.getOrElse(i) { 0 }
-            if (l > c) return true
-            if (l < c) return false
-        }
-        return false
     }
 }

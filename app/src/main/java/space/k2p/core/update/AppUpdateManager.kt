@@ -67,6 +67,34 @@ class AppUpdateManager(
 ) {
     companion object {
         const val DEFAULT_CHANGELOG_FALLBACK = "Улучшение стабильности и исправление ошибок"
+
+        fun isVersionNewer(latestRaw: String, currentRaw: String): Boolean {
+            val cleanLatest = latestRaw.removePrefix("v").removePrefix("V").trim()
+            val cleanCurrent = currentRaw.removePrefix("v").removePrefix("V").trim()
+
+            val latestParts = Regex("\\d+").findAll(cleanLatest)
+                .mapNotNull { it.value.toIntOrNull() }
+                .toList()
+            val currentParts = Regex("\\d+").findAll(cleanCurrent)
+                .mapNotNull { it.value.toIntOrNull() }
+                .toList()
+
+            val maxLen = maxOf(latestParts.size, currentParts.size)
+            for (i in 0 until maxLen) {
+                val l = latestParts.getOrElse(i) { 0 }
+                val c = currentParts.getOrElse(i) { 0 }
+                if (l > c) return true
+                if (l < c) return false
+            }
+
+            // Equal numeric version (e.g. 0.6.6-beta-fix vs 0.6.6-beta)
+            if (!cleanLatest.equals(cleanCurrent, ignoreCase = true) &&
+                !cleanCurrent.contains("-fix", ignoreCase = true)
+            ) {
+                return true
+            }
+            return false
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

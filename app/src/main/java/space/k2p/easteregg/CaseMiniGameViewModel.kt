@@ -106,15 +106,16 @@ class CaseMiniGameViewModel(
         val winIndexInCase = CaseGenerator.pickWinningIndex(targetCase.skins)
         val winningSkin = targetCase.skins[winIndexInCase]
 
-        // Build repeating tape strictly from the 11 pre-generated skins of this case
-        val cycles = 6
-        val tape = buildList {
-            repeat(cycles) {
-                addAll(targetCase.skins)
-            }
+        // Build ~46-item repeating tape strictly from the 11 pre-generated skins of this case,
+        // shifted so that fixed index 38 always holds the chosen winning skin.
+        val winningTapeIndex = 38
+        val tapeLength = 46
+        val count = CaseMiniGameConstants.SKINS_PER_CASE
+        val shift = ((winIndexInCase - (winningTapeIndex % count)) + count) % count
+        val tape = List(tapeLength) { idx ->
+            targetCase.skins[(idx + shift) % count]
         }
-        val winningTapeIndex = 4 * CaseMiniGameConstants.SKINS_PER_CASE + winIndexInCase
-        val jitter = ((System.nanoTime() % 61L) - 30L) / 100f // [-0.30 .. +0.30]
+        val jitter = ((System.nanoTime() % 51L) - 25L) / 100f // [-0.25 .. +0.25]
 
         val session = ActiveRouletteSession(
             openingCase = targetCase,
