@@ -11,6 +11,8 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import space.k2p.K2pApp
+import space.k2p.core.logging.AppLogger
+import space.k2p.core.logging.LogTag
 import space.k2p.core.vpn.K2pVpnService
 import space.k2p.core.vpn.RealVpnCoreEngine
 import space.k2p.core.vpn.VpnServerNode
@@ -109,6 +111,7 @@ object GeodataManager {
 
         val updatedDateStr = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
         K2pApp.instance.geodataPreferences.setLastUpdated(updatedDateStr)
+        AppLogger.i(LogTag.OTA, "Геоданные РФ успешно обновлены: $updatedDateStr")
 
         // If VPN is currently connected, restart it with fresh database
         if (RealVpnCoreEngine.internalState.value == VpnState.CONNECTED) {

@@ -11,7 +11,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import space.k2p.K2pApp
 import space.k2p.core.config.AppConfig
+import space.k2p.core.logging.AppLogger
+import space.k2p.core.logging.LogTag
+import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.vpn.RealVpnCoreEngine
 import space.k2p.core.vpn.VpnCoreEngine
 import space.k2p.core.vpn.VpnServerNode
@@ -171,6 +175,11 @@ class MainViewModel(
                 val configJson = XrayConfigBuilder.build(node)
                 vpnCoreEngine.start(configJson)
             } catch (e: Exception) {
+                AppLogger.e(LogTag.VPN, "Ошибка запуска VPN: ${e.message}", e)
+                WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                    K2pApp.instance,
+                    "Ошибка запуска VPN: ${e.message}"
+                )
                 _uiState.update { it.copy(errorMessage = "Ошибка запуска VPN: ${e.message}") }
             }
         }

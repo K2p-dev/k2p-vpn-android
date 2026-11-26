@@ -27,7 +27,12 @@ import org.json.JSONObject
 import space.k2p.MainActivity
 import space.k2p.R
 import space.k2p.core.config.AppConfig
+import space.k2p.core.logging.AppLogger
+import space.k2p.core.logging.LogTag
+import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.preferences.SplitTunnelingPreferences
+import java.io.File
+import java.io.RandomAccessFile
 
 class K2pVpnService : VpnService() {
 
@@ -44,6 +49,7 @@ class K2pVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var coreController: CoreController? = null
     private var statsJob: Job? = null
+    private var healthCheckJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO)
 
     private var lastUploaded = 0L
@@ -53,16 +59,31 @@ class K2pVpnService : VpnService() {
     private var lastSysRx = 0L
     private var lastSysTx = 0L
 
+    private var xrayLogReadOffset = 0L
+
     private val callbackHandler = object : CoreCallbackHandler {
         override fun onEmitStatus(status: Long, message: String?): Long {
+            if (!message.isNullOrBlank()) {
+                AppLogger.i(LogTag.XRAY, "Core status=$status: $message")
+            }
             return 0L
         }
 
         override fun shutdown(): Long {
+            AppLogger.w(LogTag.XRAY, "CoreCallbackHandler.shutdown() вызван")
+            val currentState = RealVpnCoreEngine.internalState.value
+            if (currentState == VpnState.CONNECTED || currentState == VpnState.CONNECTING) {
+                AppLogger.e(LogTag.VPN, "Неожиданный обрыв Xray-ядра (state=$currentState)")
+                WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                    applicationContext,
+                    "Неожиданный обрыв VPN-туннеля"
+                )
+            }
             return 0L
         }
 
         override fun startup(): Long {
+            AppLogger.i(LogTag.XRAY, "CoreCallbackHandler.startup() выполнен")
             return 0L
         }
     }
@@ -70,10 +91,13 @@ class K2pVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        WhitelistDetectorService.vpnProtectCallback = { socket -> protect(socket) }
         try {
             space.k2p.core.geodata.GeodataManager.initGeodata(this)
             Libv2ray.initCoreEnv(filesDir.absolutePath, "")
-        } catch (_: Exception) {
+            AppLogger.i(LogTag.VPN, "K2pVpnService создан, initCoreEnv успешно выполнен")
+        } catch (e: Exception) {
+            AppLogger.e(LogTag.VPN, "Ошибка initCoreEnv в K2pVpnService.onCreate: ${e.message}", e)
         }
     }
 
@@ -99,6 +123,7 @@ class K2pVpnService : VpnService() {
             try {
                 RealVpnCoreEngine.internalState.value = VpnState.CONNECTING
                 RealVpnCoreEngine.currentServerName = serverName
+                AppLogger.i(LogTag.VPN, "Запуск VPN-подключения к узлу: «$serverName»")
 
                 // 1. Start foreground notification
                 val notification = createNotification(serverName)
@@ -113,6 +138,7 @@ class K2pVpnService : VpnService() {
                 }
 
                 // 2. Stop old core loop and close old interface if reconnecting
+                healthCheckJob?.cancel()
                 coreController?.stopLoop()
                 vpnInterface?.close()
                 statsJob?.cancel()
@@ -132,23 +158,35 @@ class K2pVpnService : VpnService() {
                 // Add split tunneling excluded packages
                 val splitPrefs = SplitTunnelingPreferences(applicationContext)
                 val isSplitEnabled = splitPrefs.isEnabledFlow.first()
+                var excludedCount = 0
                 if (isSplitEnabled) {
                     val excludedApps = splitPrefs.excludedPackagesFlow.first()
                     for (pkg in excludedApps) {
                         runCatching {
                             builder.addDisallowedApplication(pkg)
+                            excludedCount++
                         }
                     }
                 }
+                AppLogger.d(LogTag.VPN, "TUN подготовлен (split=$isSplitEnabled, исключено=$excludedCount)")
 
                 val pfd = builder.establish()
                 if (pfd == null) {
+                    AppLogger.e(LogTag.VPN, "Не удалось создать TUN-интерфейс (builder.establish() вернул null)")
+                    WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                        applicationContext,
+                        "Не удалось поднять TUN-интерфейс"
+                    )
                     RealVpnCoreEngine.internalState.value = VpnState.DISCONNECTED
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                     return@launch
                 }
                 vpnInterface = pfd
+                AppLogger.i(LogTag.VPN, "TUN-интерфейс установлен (fd=${pfd.fd})")
+
+                // Reset xray_error.log before starting core
+                resetXrayLogFile()
 
                 // 4. Initialize CoreController and start loop
                 val controller = Libv2ray.newCoreController(callbackHandler)
@@ -156,14 +194,101 @@ class K2pVpnService : VpnService() {
 
                 controller.startLoop(configJson, pfd.fd)
                 RealVpnCoreEngine.internalState.value = VpnState.CONNECTED
+                AppLogger.i(LogTag.XRAY, "Xray startLoop успешно запущен (сервер=«$serverName»)")
 
-                // 5. Start traffic stats polling
+                // 5. Start traffic stats & Xray log polling
                 startStatsPolling()
 
+                // 6. Verify real outbound tunnel connectivity after startup
+                verifyTunnelConnectivity(controller, serverName)
+
             } catch (e: Exception) {
+                AppLogger.e(LogTag.VPN, "Ошибка запуска VPN/Xray: ${e.message}", e)
+                drainXrayLogs()
+                WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                    applicationContext,
+                    "Ошибка запуска VPN: ${e.message ?: "неизвестно"}"
+                )
                 RealVpnCoreEngine.internalState.value = VpnState.DISCONNECTED
                 stopVpn()
             }
+        }
+    }
+
+    private fun verifyTunnelConnectivity(controller: CoreController, serverName: String) {
+        healthCheckJob?.cancel()
+        healthCheckJob = serviceScope.launch {
+            delay(1800)
+            if (!isActive || RealVpnCoreEngine.internalState.value != VpnState.CONNECTED) return@launch
+            try {
+                val delayMs = controller.measureDelay("http://www.gstatic.com/generate_204")
+                if (delayMs > 0) {
+                    AppLogger.i(LogTag.VPN, "Проверка туннеля «$serverName»: OK (${delayMs} мс)")
+                } else {
+                    AppLogger.w(LogTag.VPN, "Проверка туннеля «$serverName» вернула $delayMs мс")
+                    WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                        applicationContext,
+                        "Нет ответа через VPN-туннель ($serverName)"
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.w(LogTag.VPN, "Туннель «$serverName» не пропускает трафик: ${e.message}")
+                drainXrayLogs()
+                WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                    applicationContext,
+                    "Ошибка трафика через VPN ($serverName): ${e.message}"
+                )
+            }
+        }
+    }
+
+    private fun resetXrayLogFile() {
+        try {
+            val logFile = File(filesDir, "xray_error.log")
+            if (logFile.exists()) {
+                logFile.writeText("")
+            }
+            xrayLogReadOffset = 0L
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun drainXrayLogs() {
+        try {
+            val logFile = File(filesDir, "xray_error.log")
+            if (!logFile.exists()) return
+            val len = logFile.length()
+            if (len < xrayLogReadOffset) {
+                xrayLogReadOffset = 0L
+            }
+            if (len <= xrayLogReadOffset) return
+
+            RandomAccessFile(logFile, "r").use { raf ->
+                raf.seek(xrayLogReadOffset)
+                val newText = buildString {
+                    var line = raf.readLine()
+                    while (line != null) {
+                        val decoded = String(line.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8).trim()
+                        if (decoded.isNotBlank()) {
+                            appendLine(decoded)
+                        }
+                        line = raf.readLine()
+                    }
+                }
+                xrayLogReadOffset = raf.filePointer
+
+                newText.lines().forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotBlank()) {
+                        if (trimmed.contains("Error", ignoreCase = true) || trimmed.contains("failed", ignoreCase = true)) {
+                            AppLogger.w(LogTag.XRAY, trimmed)
+                        } else {
+                            AppLogger.i(LogTag.XRAY, trimmed)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
         }
     }
 
@@ -184,6 +309,7 @@ class K2pVpnService : VpnService() {
         statsJob = serviceScope.launch {
             while (isActive && RealVpnCoreEngine.internalState.value == VpnState.CONNECTED) {
                 delay(1000)
+                drainXrayLogs()
                 try {
                     pollTrafficStats()
                 } catch (_: Exception) {
@@ -287,7 +413,10 @@ class K2pVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        AppLogger.i(LogTag.VPN, "Остановка VPN-туннеля")
         RealVpnCoreEngine.internalState.value = VpnState.STOPPING
+        healthCheckJob?.cancel()
+        healthCheckJob = null
         statsJob?.cancel()
         statsJob = null
 
@@ -299,13 +428,16 @@ class K2pVpnService : VpnService() {
         lastDownloaded = 0L
 
         serviceScope.launch {
+            drainXrayLogs()
             try {
                 coreController?.stopLoop()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                AppLogger.w(LogTag.XRAY, "Ошибка stopLoop: ${e.message}")
             }
             try {
                 vpnInterface?.close()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                AppLogger.w(LogTag.VPN, "Ошибка закрытия TUN: ${e.message}")
             }
             vpnInterface = null
             coreController = null
@@ -372,6 +504,7 @@ class K2pVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        WhitelistDetectorService.vpnProtectCallback = null
         stopVpn()
         super.onDestroy()
     }

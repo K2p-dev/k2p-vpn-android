@@ -1,8 +1,14 @@
 package space.k2p
 
 import android.app.Application
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.preferences.SplitTunnelingPreferences
 import space.k2p.core.preferences.SubscriptionPreferences
+import space.k2p.core.update.AppUpdateManager
 import space.k2p.core.vpn.RealVpnCoreEngine
 import space.k2p.core.vpn.VpnCoreProvider
 import space.k2p.data.api.NetworkModule
@@ -14,6 +20,8 @@ import space.k2p.data.repository.PaymentRepository
 import space.k2p.data.repository.SubscriptionRepository
 
 class K2pApp : Application() {
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     lateinit var tokenStorage: TokenStorage
         private set
 
@@ -36,6 +44,9 @@ class K2pApp : Application() {
         private set
 
     lateinit var appUpdateRepository: AppUpdateRepository
+        private set
+
+    lateinit var appUpdateManager: AppUpdateManager
         private set
 
     lateinit var subscriptionPreferences: SubscriptionPreferences
@@ -72,9 +83,10 @@ class K2pApp : Application() {
             }
             notificationManager?.createNotificationChannel(updateChannel)
         }
+        WhitelistDetectorService.ensureNotificationChannel(this)
 
         // Initialize real VPN core engine
-        VpnCoreProvider.engine = space.k2p.core.vpn.RealVpnCoreEngine(this)
+        VpnCoreProvider.engine = RealVpnCoreEngine(this)
 
         authRepository = AuthRepository(
             context = this,
@@ -94,6 +106,11 @@ class K2pApp : Application() {
         appUpdateRepository = AppUpdateRepository(
             githubApiService = networkModule.githubApiService
         )
+        appUpdateManager = AppUpdateManager(
+            appContext = this,
+            appUpdateRepository = appUpdateRepository,
+            githubOkHttpClient = networkModule.githubOkHttpClient
+        )
         subscriptionRepository = SubscriptionRepository(
             context = this,
             clientApiService = networkModule.clientApiService,
@@ -101,6 +118,11 @@ class K2pApp : Application() {
             json = networkModule.json,
             subscriptionPreferences = subscriptionPreferences
         )
+
+        // Check for app updates on startup
+        appScope.launch {
+            appUpdateManager.checkForUpdate()
+        }
 
         // Schedule periodic 24h background workers for geodata and app updates
         space.k2p.core.workers.WorkScheduler.schedulePeriodicTasks(this)

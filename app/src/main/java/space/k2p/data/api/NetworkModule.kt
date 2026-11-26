@@ -16,6 +16,8 @@ import space.k2p.core.config.AppConfig
 import space.k2p.core.device.DeviceSecurity
 import space.k2p.core.events.AuthEvent
 import space.k2p.core.events.AuthEventBus
+import space.k2p.core.logging.AppLogger
+import space.k2p.core.logging.LogTag
 import space.k2p.core.vpn.VpnCoreProvider
 import space.k2p.data.auth.TokenStorage
 import java.util.concurrent.TimeUnit
@@ -87,6 +89,29 @@ class NetworkModule(
         response
     }
 
+    private val apiLoggerInterceptor = Interceptor { chain ->
+        val request = chain.request()
+        val hasAuth = !request.header("Authorization").isNullOrBlank()
+        val authMask = if (hasAuth) " [Auth: Bearer ***]" else ""
+        val urlStr = request.url.toString().replace(Regex("token=[^&]+"), "token=***")
+        val startMs = System.currentTimeMillis()
+        try {
+            val response = chain.proceed(request)
+            val elapsed = System.currentTimeMillis() - startMs
+            val msg = "--> ${request.method} $urlStr$authMask | <-- HTTP ${response.code} (${elapsed} мс)"
+            if (response.isSuccessful) {
+                AppLogger.d(LogTag.API, msg)
+            } else {
+                AppLogger.w(LogTag.API, msg)
+            }
+            response
+        } catch (e: Exception) {
+            val elapsed = System.currentTimeMillis() - startMs
+            AppLogger.e(LogTag.API, "--> ${request.method} $urlStr$authMask | ОШИБКА (${elapsed} мс): ${e.message}", e)
+            throw e
+        }
+    }
+
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (BuildConfig.DEBUG) {
             HttpLoggingInterceptor.Level.BODY
@@ -98,6 +123,7 @@ class NetworkModule(
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authHeadersInterceptor)
         .addInterceptor(auth401Interceptor)
+        .addInterceptor(apiLoggerInterceptor)
         .addInterceptor(loggingInterceptor)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -123,6 +149,7 @@ class NetworkModule(
                 .build()
             chain.proceed(request)
         }
+        .addInterceptor(apiLoggerInterceptor)
         .addInterceptor(loggingInterceptor)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)

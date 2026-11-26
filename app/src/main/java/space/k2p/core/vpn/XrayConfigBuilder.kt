@@ -30,8 +30,12 @@ object XrayConfigBuilder {
         val shouldBypass = shouldBypassPref && hasGeodata
 
         // 1. Log
+        val xrayLogFile = k2pApp?.let { File(it.filesDir, "xray_error.log").absolutePath }
         val log = JSONObject().apply {
             put("loglevel", "warning")
+            if (!xrayLogFile.isNullOrBlank()) {
+                put("error", xrayLogFile)
+            }
         }
         root.put("log", log)
 

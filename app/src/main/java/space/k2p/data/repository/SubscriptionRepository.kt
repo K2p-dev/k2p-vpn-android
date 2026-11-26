@@ -22,6 +22,9 @@ import libv2ray.Libv2ray
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import space.k2p.core.config.AppConfig
+import space.k2p.core.logging.AppLogger
+import space.k2p.core.logging.LogTag
+import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.preferences.SubscriptionPreferences
 import space.k2p.core.vpn.SubscriptionParser
 import space.k2p.core.vpn.VpnServerNode
@@ -156,6 +159,7 @@ class SubscriptionRepository(
 
             val callResponse = okHttpClient.newCall(request).execute()
             if (!callResponse.isSuccessful) {
+                AppLogger.e(LogTag.API, "Ошибка загрузки подписки: HTTP ${callResponse.code}")
                 return@withContext Result.failure(Exception("Sub link download failed: ${callResponse.code}"))
             }
 
@@ -167,6 +171,7 @@ class SubscriptionRepository(
             // 5. Parse nodes body
             val rawBody = callResponse.body?.string().orEmpty()
             val parsedNodes = SubscriptionParser.parseNodes(rawBody)
+            AppLogger.i(LogTag.API, "Подписка обновлена: загружено серверов=${parsedNodes.size}")
 
             if (parsedNodes.isNotEmpty()) {
                 _nodes.value = parsedNodes
@@ -190,6 +195,7 @@ class SubscriptionRepository(
 
             Result.success(Unit)
         } catch (e: Exception) {
+            AppLogger.e(LogTag.API, "Исключение при обновлении подписки: ${e.message}", e)
             Result.failure(e)
         } finally {
             _isRefreshing.value = false
@@ -200,11 +206,24 @@ class SubscriptionRepository(
         val delay = try {
             val pingConfig = XrayConfigBuilder.buildForPing(node)
             val d = Libv2ray.measureOutboundDelay(pingConfig, "http://www.gstatic.com/generate_204")
-            if (d > 0) d else -1L
-        } catch (_: Exception) {
+            if (d > 0) {
+                AppLogger.d(LogTag.NET, "Пинг ${node.name} (${node.host}): ${d} мс")
+                d
+            } else {
+                AppLogger.w(LogTag.NET, "Пинг ${node.name} (${node.host}): -1 (нет ответа)")
+                -1L
+            }
+        } catch (e: Exception) {
+            AppLogger.w(LogTag.NET, "Ошибка пинга ${node.name} (${node.host}): ping=-1 (${e.message})")
             -1L
         }
         updateNodePing(node.id, delay)
+        if (delay == -1L && _selectedNode.value?.id == node.id) {
+            WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                context,
+                "Пинг до выбранного сервера «${node.name}» равен -1"
+            )
+        }
         delay
     }
 

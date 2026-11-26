@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.serialization.json.Json
 import retrofit2.Response
 import space.k2p.core.device.DeviceSecurity
+import space.k2p.core.logging.AppLogger
+import space.k2p.core.logging.LogTag
 import space.k2p.data.api.AuthApiService
 import space.k2p.data.api.model.ApiErrorResponse
 import space.k2p.data.api.model.AuthResponse
@@ -53,6 +55,7 @@ class AuthRepository(
             else -> errorDto?.message ?: "Ошибка сервера (${response.code()})"
         }
 
+        AppLogger.w(LogTag.API, "Auth API ошибка HTTP ${response.code()} code=$rawCode: $message")
         return ApiException(code = rawCode, statusCode = response.code(), message = message)
     }
 

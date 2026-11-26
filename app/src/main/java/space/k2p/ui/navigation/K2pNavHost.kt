@@ -11,6 +11,7 @@ import space.k2p.K2pApp
 import space.k2p.core.preferences.ThemePreferences
 import space.k2p.ui.screens.auth.AuthScreen
 import space.k2p.ui.screens.auth.AuthViewModel
+import space.k2p.ui.screens.debug.DebugLogScreen
 import space.k2p.ui.screens.main.MainScreen
 import space.k2p.ui.screens.profile.ProfileScreen
 import space.k2p.ui.screens.profile.ProfileViewModel
@@ -18,6 +19,7 @@ import space.k2p.ui.screens.settings.SettingsScreen
 import space.k2p.ui.screens.settings.SettingsViewModel
 import space.k2p.ui.screens.tariffs.TariffsScreen
 import space.k2p.ui.screens.tariffs.TariffsViewModel
+import space.k2p.ui.screens.update.UpdateScreen
 
 @Composable
 fun K2pNavHost(
@@ -58,7 +60,8 @@ fun K2pNavHost(
                 viewModel = mainViewModel,
                 onNavigateToTariffs = { navController.navigate(Screen.Tariffs.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                onNavigateToUpdate = { navController.navigate(Screen.Update.route) }
             )
         }
 
@@ -105,6 +108,20 @@ fun K2pNavHost(
             }
             SettingsScreen(
                 viewModel = settingsViewModel,
+                onBack = { navController.popBackStack() },
+                onNavigateToUpdate = { navController.navigate(Screen.Update.route) },
+                onNavigateToDebugLogs = { navController.navigate(Screen.DebugLogs.route) }
+            )
+        }
+
+        composable(Screen.Update.route) {
+            UpdateScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.DebugLogs.route) {
+            DebugLogScreen(
                 onBack = { navController.popBackStack() }
             )
         }

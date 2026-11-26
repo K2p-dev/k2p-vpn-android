@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -94,13 +96,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import space.k2p.K2pApp
+import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.vpn.VpnCoreProvider
 import space.k2p.core.vpn.VpnServerNode
 import space.k2p.core.vpn.VpnState
 import space.k2p.data.api.model.DeviceItemDto
 import space.k2p.ui.components.BrandBackground
-import space.k2p.ui.components.BrandLogoHeader
 import space.k2p.ui.components.CompactBrandLogoHeader
+import space.k2p.ui.components.WhitelistDiagnosticCard
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -111,6 +114,7 @@ fun MainScreen(
     onNavigateToTariffs: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToUpdate: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: MainViewModel = viewModel {
         MainViewModel(
@@ -122,6 +126,8 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val otaState by K2pApp.instance.appUpdateManager.state.collectAsState()
+    val whitelistState by WhitelistDetectorService.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showLocationSheet by remember { mutableStateOf(false) }
@@ -258,6 +264,51 @@ fun MainScreen(
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // Top OTA Update Capsule above VPN status / subscription card
+                if (otaState.updateAvailable) {
+                    Surface(
+                        onClick = onNavigateToUpdate,
+                        color = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = RoundedCornerShape(50),
+                        shadowElevation = 4.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SystemUpdate,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Обновите приложение • Доступна ${otaState.latestVersion}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Открыть обновление",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 // Subscription Warning Card (if expired or inactive)
                 if (!uiState.isSubscriptionActive || uiState.expiryDays <= 0) {
@@ -714,6 +765,14 @@ fun MainScreen(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Whitelist & Network Diagnostic Section
+                WhitelistDiagnosticCard(
+                    state = whitelistState,
+                    onRunCheck = { WhitelistDetectorService.runManualCheck(context) }
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
             }

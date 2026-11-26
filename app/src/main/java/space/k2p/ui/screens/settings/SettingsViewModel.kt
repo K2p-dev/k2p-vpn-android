@@ -149,7 +149,7 @@ class SettingsViewModel(
     fun checkForUpdate() {
         viewModelScope.launch {
             _uiState.update { it.copy(isCheckingUpdate = true, updateMessage = null) }
-            val result = appUpdateRepository.checkForUpdate()
+            val result = space.k2p.K2pApp.instance.appUpdateManager.checkForUpdate()
             result.onSuccess { info ->
                 _uiState.update {
                     it.copy(

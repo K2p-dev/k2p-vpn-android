@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ColorLens
@@ -72,11 +73,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import space.k2p.BuildConfig
 import space.k2p.core.config.AppConfig
+import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.preferences.AccentMode
 import space.k2p.core.preferences.ThemeMode
-import space.k2p.core.util.LinkHandler
 import space.k2p.ui.components.AppIconImage
 import space.k2p.ui.components.BrandBackground
+import space.k2p.ui.components.WhitelistDiagnosticCard
 import space.k2p.ui.theme.AccentPresets
 import space.k2p.ui.theme.BrandCrimson
 
@@ -85,9 +87,12 @@ import space.k2p.ui.theme.BrandCrimson
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
+    onNavigateToUpdate: () -> Unit = {},
+    onNavigateToDebugLogs: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val whitelistState by WhitelistDetectorService.state.collectAsState()
     val context = LocalContext.current
     var hexInputText by remember(uiState.themeConfig.customAccentHex) {
         mutableStateOf(uiState.themeConfig.customAccentHex)
@@ -140,8 +145,8 @@ fun SettingsScreen(
                 if (info.isUpdateAvailable) {
                     Button(
                         onClick = {
-                            LinkHandler.openUrl(context, info.downloadUrl)
                             viewModel.dismissUpdateDialog()
+                            onNavigateToUpdate()
                         }
                     ) {
                         Text("Скачать обновление")
@@ -618,7 +623,42 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 5. ABOUT & UPDATES SECTION
+            // 5. DIAGNOSTICS & DEBUG LOGS SECTION
+            WhitelistDiagnosticCard(
+                state = whitelistState,
+                onRunCheck = { WhitelistDetectorService.runManualCheck(context) }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onNavigateToDebugLogs,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BugReport,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Дебаг и логи",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 6. ABOUT & UPDATES SECTION
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(20.dp),
