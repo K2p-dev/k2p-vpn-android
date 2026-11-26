@@ -63,6 +63,10 @@ class AppUpdateManager(
     private val appUpdateRepository: AppUpdateRepository,
     private val githubOkHttpClient: OkHttpClient
 ) {
+    companion object {
+        const val DEFAULT_CHANGELOG_FALLBACK = "Улучшение стабильности и исправление ошибок"
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow(OtaUpdateUiState())
@@ -299,26 +303,31 @@ class AppUpdateManager(
         return File(File(appContext.cacheDir, "updates"), "k2p-update.apk")
     }
 
-    private fun parseChangelog(rawBody: String): List<String> {
-        if (rawBody.isBlank()) {
-            return listOf("Улучшена стабильность работы и исправлены ошибки")
+    internal fun parseChangelog(rawBody: String?): List<String> {
+        if (rawBody.isNullOrBlank()) {
+            return listOf(DEFAULT_CHANGELOG_FALLBACK)
         }
-        val lines = rawBody.lines()
+        val lines = rawBody
+            .replace("\r\n", "\n")
+            .lines()
             .map { it.trim() }
             .filter { line ->
                 line.isNotBlank() &&
-                    !line.startsWith("#") &&
-                    !line.startsWith("**Full Changelog**")
+                    !line.startsWith("**Full Changelog**", ignoreCase = true) &&
+                    !line.startsWith("Full Changelog:", ignoreCase = true) &&
+                    !line.matches(Regex("^[-*_]{3,}$"))
             }
             .map { line ->
-                line.replaceFirst(Regex("^([-*•]|\\d+[.)])\\s+"), "").trim()
+                line
+                    .replaceFirst(Regex("^#{1,6}\\s*"), "")
+                    .replaceFirst(Regex("^([-*•+]|\\d+[.)])\\s+"), "")
+                    .replaceFirst(Regex("^#{1,6}\\s*"), "")
+                    .trim()
             }
             .filter { it.isNotBlank() }
 
-        return if (lines.isNotEmpty()) {
-            lines
-        } else {
-            listOf("Улучшена стабильность работы и исправлены ошибки")
+        return lines.ifEmpty {
+            listOf(rawBody.trim())
         }
     }
 }

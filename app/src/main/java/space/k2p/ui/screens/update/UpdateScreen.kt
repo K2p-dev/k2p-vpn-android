@@ -89,6 +89,13 @@ fun UpdateScreen(
     var countdownSeconds by remember { mutableIntStateOf(3) }
     var waitingUnknownSourcesPermission by remember { mutableStateOf(false) }
 
+    // Ensure update info & changelog are loaded if opened directly
+    LaunchedEffect(Unit) {
+        if (otaState.updateInfo == null && !otaState.isChecking) {
+            updateManager.checkForUpdate()
+        }
+    }
+
     // Automatically open installation sheet when download finishes
     LaunchedEffect(otaState.downloadState) {
         if (otaState.downloadState is OtaDownloadState.Downloaded) {
@@ -271,7 +278,7 @@ fun UpdateScreen(
                         )
 
                         val items = otaState.changelogItems.ifEmpty {
-                            listOf("Улучшена стабильность работы и производительность")
+                            listOf(AppUpdateManager.DEFAULT_CHANGELOG_FALLBACK)
                         }
 
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
