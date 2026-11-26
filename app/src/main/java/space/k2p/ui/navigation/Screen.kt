@@ -9,4 +9,5 @@ sealed class Screen(val route: String) {
     data object Update : Screen("update")
     data object DebugLogs : Screen("debug_logs")
     data object EmergencyBypassSettings : Screen("emergency_bypass_settings")
+    data object CaseMiniGame : Screen("case_minigame")
 }

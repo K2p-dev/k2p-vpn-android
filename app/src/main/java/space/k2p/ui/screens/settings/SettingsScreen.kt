@@ -1,9 +1,11 @@
 package space.k2p.ui.screens.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +61,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,12 +98,16 @@ fun SettingsScreen(
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToDebugLogs: () -> Unit = {},
     onNavigateToEmergencyBypass: () -> Unit = {},
+    onNavigateToCaseMiniGame: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val whitelistState by WhitelistDetectorService.state.collectAsState()
     val emergencyState by K2pApp.instance.emergencyTransportRepository.state.collectAsState()
     val context = LocalContext.current
+    var versionTapCount by remember { mutableIntStateOf(0) }
+    var lastVersionTapMs by remember { mutableLongStateOf(0L) }
+    var activeTapToast by remember { mutableStateOf<Toast?>(null) }
     var hexInputText by remember(uiState.themeConfig.customAccentHex) {
         mutableStateOf(uiState.themeConfig.customAccentHex)
     }
@@ -769,7 +777,36 @@ fun SettingsScreen(
                             text = "v${BuildConfig.VERSION_NAME}",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastVersionTapMs > 2000L) {
+                                        versionTapCount = 1
+                                    } else {
+                                        versionTapCount += 1
+                                    }
+                                    lastVersionTapMs = now
+
+                                    if (versionTapCount >= 10) {
+                                        activeTapToast?.cancel()
+                                        activeTapToast = null
+                                        versionTapCount = 0
+                                        onNavigateToCaseMiniGame()
+                                    } else if (versionTapCount in 7..9) {
+                                        val remaining = 10 - versionTapCount
+                                        activeTapToast?.cancel()
+                                        activeTapToast = Toast.makeText(
+                                            context,
+                                            "Осталось $remaining нажатий...",
+                                            Toast.LENGTH_SHORT
+                                        ).also { it.show() }
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
                         )
                     }
 

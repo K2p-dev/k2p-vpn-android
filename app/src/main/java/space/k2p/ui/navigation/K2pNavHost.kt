@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import space.k2p.K2pApp
 import space.k2p.core.preferences.ThemePreferences
+import space.k2p.easteregg.CaseMiniGameScreen
 import space.k2p.ui.screens.auth.AuthScreen
 import space.k2p.ui.screens.auth.AuthViewModel
 import space.k2p.ui.screens.debug.DebugLogScreen
@@ -113,7 +114,8 @@ fun K2pNavHost(
                 onBack = { navController.popBackStack() },
                 onNavigateToUpdate = { navController.navigate(Screen.Update.route) },
                 onNavigateToDebugLogs = { navController.navigate(Screen.DebugLogs.route) },
-                onNavigateToEmergencyBypass = { navController.navigate(Screen.EmergencyBypassSettings.route) }
+                onNavigateToEmergencyBypass = { navController.navigate(Screen.EmergencyBypassSettings.route) },
+                onNavigateToCaseMiniGame = { navController.navigate(Screen.CaseMiniGame.route) }
             )
         }
 
@@ -131,6 +133,12 @@ fun K2pNavHost(
 
         composable(Screen.EmergencyBypassSettings.route) {
             EmergencyBypassSettingsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.CaseMiniGame.route) {
+            CaseMiniGameScreen(
                 onBack = { navController.popBackStack() }
             )
         }
