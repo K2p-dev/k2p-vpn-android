@@ -60,7 +60,7 @@ jobs:
           TAG_NAME="${{ inputs.tag_name || github.ref_name }}"
           if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "master" ] || [ "$TAG_NAME" = "main" ]; then
             VER=$(grep -oP 'versionName\s*=\s*"\K[0-9]+\.[0-9]+\.[0-9]+' app/build.gradle.kts | head -n 1)
-            TAG_NAME="v${VER:-0.6.4}-beta"
+            TAG_NAME="v${VER:-0.6.5}-beta"
           fi
           echo "RELEASE_TAG=$TAG_NAME" >> "$GITHUB_ENV"
           mkdir -p release_assets
