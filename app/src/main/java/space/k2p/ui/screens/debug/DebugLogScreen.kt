@@ -313,7 +313,7 @@ fun DebugLogScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Логи пока пусты.\nСобытия Xray, белых списков, сети и OTA появятся здесь.",
+                                text = "Логи пока пусты.\nСобытия Xray, OpenFlux, белых списков, сети и OTA появятся здесь.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
@@ -342,6 +342,7 @@ fun DebugLogScreen(
 private fun LogEntryRow(entry: LogEntry) {
     val tagColor = when (entry.tag) {
         LogTag.XRAY -> Color(0xFFAB47BC)
+        LogTag.OPENFLUX -> Color(0xFFF59E0B)
         LogTag.VPN -> MaterialTheme.colorScheme.primary
         LogTag.WHITELIST -> Color(0xFF26A69A)
         LogTag.OTA -> Color(0xFFFFA726)

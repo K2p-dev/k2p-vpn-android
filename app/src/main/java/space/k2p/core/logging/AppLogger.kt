@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 enum class LogTag(val label: String) {
     XRAY("XRAY"),
+    OPENFLUX("OPENFLUX"),
     VPN("VPN"),
     WHITELIST("WHITELIST"),
     OTA("OTA"),
@@ -27,6 +28,7 @@ enum class LogLevel(val label: String) {
 enum class LogCategory(val title: String) {
     ALL("Все"),
     XRAY("Xray"),
+    OPENFLUX("OpenFlux"),
     WHITELIST("Белые списки"),
     NETWORK_API("Сеть и API")
 }
@@ -44,6 +46,7 @@ data class LogEntry(
         return when (category) {
             LogCategory.ALL -> true
             LogCategory.XRAY -> tag == LogTag.XRAY || tag == LogTag.VPN
+            LogCategory.OPENFLUX -> tag == LogTag.OPENFLUX
             LogCategory.WHITELIST -> tag == LogTag.WHITELIST
             LogCategory.NETWORK_API -> tag == LogTag.API || tag == LogTag.NET || tag == LogTag.OTA
         }

@@ -12,8 +12,8 @@ android {
         applicationId = "space.k2p"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.6.3 BETA"
+        versionCode = 10
+        versionName = "0.6.4 BETA"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -62,6 +62,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 

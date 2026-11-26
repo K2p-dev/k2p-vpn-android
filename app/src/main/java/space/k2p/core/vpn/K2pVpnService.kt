@@ -41,6 +41,7 @@ class K2pVpnService : VpnService() {
         const val ACTION_DISCONNECT = "space.k2p.action.DISCONNECT"
         const val EXTRA_CONFIG_JSON = "config_json"
         const val EXTRA_SERVER_NAME = "server_name"
+        const val EXTRA_EMERGENCY_MODE = "emergency_mode"
 
         private const val CHANNEL_ID = "k2p_vpn_channel"
         private const val NOTIFICATION_ID = 2001
@@ -50,6 +51,7 @@ class K2pVpnService : VpnService() {
     private var coreController: CoreController? = null
     private var statsJob: Job? = null
     private var healthCheckJob: Job? = null
+    private var isEmergencySession = false
     private val serviceScope = CoroutineScope(Dispatchers.IO)
 
     private var lastUploaded = 0L
@@ -108,7 +110,10 @@ class K2pVpnService : VpnService() {
             ACTION_CONNECT -> {
                 val configJson = intent.getStringExtra(EXTRA_CONFIG_JSON).orEmpty()
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME).orEmpty()
-                startVpn(configJson, serverName)
+                val emergencyMode = intent.getBooleanExtra(EXTRA_EMERGENCY_MODE, false)
+                isEmergencySession = emergencyMode
+                RealVpnCoreEngine.isEmergencyMode = emergencyMode
+                startVpn(configJson, serverName, emergencyMode)
             }
             ACTION_DISCONNECT -> {
                 stopVpn()
@@ -118,9 +123,12 @@ class K2pVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private fun startVpn(configJson: String, serverName: String) {
+    private fun startVpn(configJson: String, serverName: String, emergencyMode: Boolean) {
         serviceScope.launch {
             try {
+                if (!emergencyMode) {
+                    OpenFluxEngine.stop("Переключение на стандартный VPN")
+                }
                 RealVpnCoreEngine.internalState.value = VpnState.CONNECTING
                 RealVpnCoreEngine.currentServerName = serverName
                 AppLogger.i(LogTag.VPN, "Запуск VPN-подключения к узлу: «$serverName»")
@@ -200,25 +208,31 @@ class K2pVpnService : VpnService() {
                 startStatsPolling()
 
                 // 6. Verify real outbound tunnel connectivity after startup
-                verifyTunnelConnectivity(controller, serverName)
+                verifyTunnelConnectivity(controller, serverName, emergencyMode)
 
             } catch (e: Exception) {
                 AppLogger.e(LogTag.VPN, "Ошибка запуска VPN/Xray: ${e.message}", e)
                 drainXrayLogs()
-                WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
-                    applicationContext,
-                    "Ошибка запуска VPN: ${e.message ?: "неизвестно"}"
-                )
+                if (!emergencyMode) {
+                    WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                        applicationContext,
+                        "Ошибка запуска VPN: ${e.message ?: "неизвестно"}"
+                    )
+                }
                 RealVpnCoreEngine.internalState.value = VpnState.DISCONNECTED
                 stopVpn()
             }
         }
     }
 
-    private fun verifyTunnelConnectivity(controller: CoreController, serverName: String) {
+    private fun verifyTunnelConnectivity(
+        controller: CoreController,
+        serverName: String,
+        emergencyMode: Boolean
+    ) {
         healthCheckJob?.cancel()
         healthCheckJob = serviceScope.launch {
-            delay(1800)
+            delay(if (emergencyMode) 4000L else 1800L)
             if (!isActive || RealVpnCoreEngine.internalState.value != VpnState.CONNECTED) return@launch
             try {
                 val delayMs = controller.measureDelay("http://www.gstatic.com/generate_204")
@@ -226,18 +240,22 @@ class K2pVpnService : VpnService() {
                     AppLogger.i(LogTag.VPN, "Проверка туннеля «$serverName»: OK (${delayMs} мс)")
                 } else {
                     AppLogger.w(LogTag.VPN, "Проверка туннеля «$serverName» вернула $delayMs мс")
-                    WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
-                        applicationContext,
-                        "Нет ответа через VPN-туннель ($serverName)"
-                    )
+                    if (!emergencyMode) {
+                        WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                            applicationContext,
+                            "Нет ответа через VPN-туннель ($serverName)"
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 AppLogger.w(LogTag.VPN, "Туннель «$serverName» не пропускает трафик: ${e.message}")
                 drainXrayLogs()
-                WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
-                    applicationContext,
-                    "Ошибка трафика через VPN ($serverName): ${e.message}"
-                )
+                if (!emergencyMode) {
+                    WhitelistDetectorService.triggerAutoCheckOnVpnProblem(
+                        applicationContext,
+                        "Ошибка трафика через VPN ($serverName): ${e.message}"
+                    )
+                }
             }
         }
     }
@@ -415,6 +433,8 @@ class K2pVpnService : VpnService() {
     private fun stopVpn() {
         AppLogger.i(LogTag.VPN, "Остановка VPN-туннеля")
         RealVpnCoreEngine.internalState.value = VpnState.STOPPING
+        isEmergencySession = false
+        RealVpnCoreEngine.isEmergencyMode = false
         healthCheckJob?.cancel()
         healthCheckJob = null
         statsJob?.cancel()
@@ -434,6 +454,7 @@ class K2pVpnService : VpnService() {
             } catch (e: Exception) {
                 AppLogger.w(LogTag.XRAY, "Ошибка stopLoop: ${e.message}")
             }
+            runCatching { OpenFluxEngine.stop("Остановка VPN-туннеля") }
             try {
                 vpnInterface?.close()
             } catch (e: Exception) {

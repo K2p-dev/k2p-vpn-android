@@ -15,6 +15,7 @@
     <application
         android:name=".K2pApp"
         android:allowBackup="false"
+        android:extractNativeLibs="true"
         android:usesCleartextTraffic="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

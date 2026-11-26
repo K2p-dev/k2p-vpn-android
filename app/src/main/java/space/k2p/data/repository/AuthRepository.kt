@@ -1,11 +1,16 @@
 package space.k2p.data.repository
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import retrofit2.Response
+import space.k2p.K2pApp
 import space.k2p.core.device.DeviceSecurity
 import space.k2p.core.logging.AppLogger
 import space.k2p.core.logging.LogTag
+import space.k2p.core.vpn.OpenFluxEngine
 import space.k2p.data.api.AuthApiService
 import space.k2p.data.api.model.ApiErrorResponse
 import space.k2p.data.api.model.AuthResponse
@@ -73,6 +78,9 @@ class AuthRepository(
                         hwid = body.hwid ?: hwid
                     )
                     space.k2p.core.work.SubscriptionWorkManager.schedulePeriodicWork(context)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        runCatching { K2pApp.instance.emergencyTransportRepository.syncFromServer() }
+                    }
                 }
                 Result.success(body)
             } else {
@@ -114,6 +122,9 @@ class AuthRepository(
                         hwid = body.hwid ?: hwid
                     )
                     space.k2p.core.work.SubscriptionWorkManager.schedulePeriodicWork(context)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        runCatching { K2pApp.instance.emergencyTransportRepository.syncFromServer() }
+                    }
                 }
                 Result.success(body)
             } else {
@@ -163,6 +174,9 @@ class AuthRepository(
                         hwid = body.hwid ?: hwid
                     )
                     space.k2p.core.work.SubscriptionWorkManager.schedulePeriodicWork(context)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        runCatching { K2pApp.instance.emergencyTransportRepository.syncFromServer() }
+                    }
                 }
                 Result.success(body)
             } else {
@@ -175,12 +189,15 @@ class AuthRepository(
 
     suspend fun logout(): Result<Unit> {
         space.k2p.core.work.SubscriptionWorkManager.cancelWork(context)
+        runCatching { OpenFluxEngine.stop("Выход из аккаунта") }
         return try {
             apiService.logout()
             tokenStorage.clear()
+            runCatching { K2pApp.instance.emergencyTransportRepository.clearLocal() }
             Result.success(Unit)
         } catch (e: Exception) {
             tokenStorage.clear()
+            runCatching { K2pApp.instance.emergencyTransportRepository.clearLocal() }
             Result.success(Unit)
         }
     }

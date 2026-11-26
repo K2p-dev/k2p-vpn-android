@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -43,8 +45,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,13 +70,16 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import space.k2p.BuildConfig
+import space.k2p.K2pApp
 import space.k2p.core.config.AppConfig
 import space.k2p.core.network.WhitelistDetectorService
 import space.k2p.core.preferences.AccentMode
 import space.k2p.core.preferences.ThemeMode
+import space.k2p.data.api.model.EmergencyTransportStatus
 import space.k2p.ui.components.AppIconImage
 import space.k2p.ui.components.BrandBackground
 import space.k2p.ui.components.WhitelistDiagnosticCard
@@ -89,10 +93,12 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToUpdate: () -> Unit = {},
     onNavigateToDebugLogs: () -> Unit = {},
+    onNavigateToEmergencyBypass: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val whitelistState by WhitelistDetectorService.state.collectAsState()
+    val emergencyState by K2pApp.instance.emergencyTransportRepository.state.collectAsState()
     val context = LocalContext.current
     var hexInputText by remember(uiState.themeConfig.customAccentHex) {
         mutableStateOf(uiState.themeConfig.customAccentHex)
@@ -623,7 +629,77 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 5. DIAGNOSTICS & DEBUG LOGS SECTION
+            // 5. EMERGENCY WHITELIST BYPASS (OPENFLUX) ENTRY
+            val emergencyBadgeColor = when (emergencyState.status) {
+                EmergencyTransportStatus.VALID -> Color(0xFF4CAF50)
+                EmergencyTransportStatus.NOT_CONFIGURED -> Color(0xFFF59E0B)
+                EmergencyTransportStatus.INVALID -> Color(0xFFFF7043)
+            }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onNavigateToEmergencyBypass() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Экстренный обход белых списков (OpenFlux)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                color = emergencyBadgeColor.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, emergencyBadgeColor.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = emergencyState.status.badgeText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = emergencyBadgeColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Открыть настройки OpenFlux",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 6. DIAGNOSTICS & DEBUG LOGS SECTION
             WhitelistDiagnosticCard(
                 state = whitelistState,
                 onRunCheck = { WhitelistDetectorService.runManualCheck(context) }

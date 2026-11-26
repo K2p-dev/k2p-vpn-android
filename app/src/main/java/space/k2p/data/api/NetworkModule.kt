@@ -16,8 +16,10 @@ import space.k2p.core.config.AppConfig
 import space.k2p.core.device.DeviceSecurity
 import space.k2p.core.events.AuthEvent
 import space.k2p.core.events.AuthEventBus
+import space.k2p.K2pApp
 import space.k2p.core.logging.AppLogger
 import space.k2p.core.logging.LogTag
+import space.k2p.core.vpn.OpenFluxEngine
 import space.k2p.core.vpn.VpnCoreProvider
 import space.k2p.data.auth.TokenStorage
 import java.util.concurrent.TimeUnit
@@ -74,8 +76,10 @@ class NetworkModule(
             if (isDeviceRevoked || isInvalidToken) {
                 // Immediately stop VPN and clear credentials
                 CoroutineScope(Dispatchers.IO).launch {
+                    runCatching { OpenFluxEngine.stop("Сессия устройства завершена") }
                     runCatching { VpnCoreProvider.engine.stop() }
                     tokenStorage.clear()
+                    runCatching { K2pApp.instance.emergencyTransportRepository.clearLocal() }
                     val message = if (isDeviceRevoked) {
                         "Это устройство было отвязано от аккаунта"
                     } else {

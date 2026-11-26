@@ -97,13 +97,17 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import space.k2p.K2pApp
 import space.k2p.core.network.WhitelistDetectorService
+import space.k2p.core.network.WhitelistVerdict
+import space.k2p.core.vpn.OpenFluxEngine
 import space.k2p.core.vpn.VpnCoreProvider
 import space.k2p.core.vpn.VpnServerNode
 import space.k2p.core.vpn.VpnState
 import space.k2p.data.api.model.DeviceItemDto
+import space.k2p.data.api.model.EmergencyTransportStatus
 import space.k2p.ui.components.BrandBackground
 import space.k2p.ui.components.CompactBrandLogoHeader
 import space.k2p.ui.components.WhitelistDiagnosticCard
+import space.k2p.ui.screens.settings.formatRemainingDeleteTime
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -115,6 +119,7 @@ fun MainScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToUpdate: () -> Unit = {},
+    onNavigateToEmergencyBypass: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: MainViewModel = viewModel {
         MainViewModel(
@@ -128,6 +133,8 @@ fun MainScreen(
     val uiState by viewModel.uiState.collectAsState()
     val otaState by K2pApp.instance.appUpdateManager.state.collectAsState()
     val whitelistState by WhitelistDetectorService.state.collectAsState()
+    val emergencyState by K2pApp.instance.emergencyTransportRepository.state.collectAsState()
+    val openFluxState by OpenFluxEngine.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showLocationSheet by remember { mutableStateOf(false) }
@@ -140,6 +147,15 @@ fun MainScreen(
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             viewModel.startVpn()
+        }
+    }
+
+    // Emergency OpenFlux VPN Permission Launcher
+    val emergencyVpnPrepareLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.startEmergencyOpenFlux()
         }
     }
 
@@ -676,6 +692,74 @@ fun MainScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
+                // Emergency Bypass Pre-Setup / Broken Link Warning Banner above Server Selector
+                if (emergencyState.status == EmergencyTransportStatus.NOT_CONFIGURED ||
+                    emergencyState.status == EmergencyTransportStatus.INVALID
+                ) {
+                    val isInvalid = emergencyState.status == EmergencyTransportStatus.INVALID
+                    val bannerAccent = if (isInvalid) Color(0xFFFF7043) else Color(0xFFF59E0B)
+                    val bannerTitle = if (isInvalid) {
+                        "Ссылка на документ не работает — просьба обновить"
+                    } else {
+                        "Экстренный обход белых списков не настроен"
+                    }
+                    val bannerSubtitle = if (isInvalid) {
+                        "Удалится через ${formatRemainingDeleteTime(emergencyState.deleteAtMs)}"
+                    } else {
+                        "Нажмите, чтобы привязать документ заранее"
+                    }
+
+                    Surface(
+                        onClick = onNavigateToEmergencyBypass,
+                        color = bannerAccent.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, bannerAccent.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = bannerAccent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = bannerTitle,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = bannerSubtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Настроить",
+                                tint = bannerAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
                 // Selected Server Card
                 val activeNode = uiState.selectedNode
                 Card(
@@ -762,6 +846,118 @@ fun MainScreen(
                                 contentDescription = "Выбрать сервер",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Emergency OpenFlux Bypass Button Card (gated by WHITELISTS_ACTIVE + VALID binding)
+                val isEmergencyRunning = openFluxState.isRunning &&
+                    (uiState.vpnState == VpnState.CONNECTED || uiState.vpnState == VpnState.CONNECTING)
+                val isWhitelistDetected = whitelistState.verdict == WhitelistVerdict.WHITELISTS_ACTIVE
+                val isBindingValid = emergencyState.status == EmergencyTransportStatus.VALID
+                val canLaunchEmergency = isWhitelistDetected && isBindingValid
+                val emergencyButtonEnabled = !uiState.isEmergencyLaunching && (isEmergencyRunning || canLaunchEmergency)
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            1.dp,
+                            if (isEmergencyRunning) {
+                                Color(0xFFF59E0B).copy(alpha = 0.6f)
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                            },
+                            RoundedCornerShape(18.dp)
+                        )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Button(
+                            onClick = {
+                                if (isEmergencyRunning) {
+                                    viewModel.disconnect()
+                                } else {
+                                    val prepareIntent = VpnService.prepare(context)
+                                    if (prepareIntent != null) {
+                                        emergencyVpnPrepareLauncher.launch(prepareIntent)
+                                    } else {
+                                        viewModel.startEmergencyOpenFlux()
+                                    }
+                                }
+                            },
+                            enabled = emergencyButtonEnabled,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isEmergencyRunning) {
+                                    Color(0xFFF59E0B)
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                contentColor = if (isEmergencyRunning) {
+                                    Color.Black
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimary
+                                }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            if (uiState.isEmergencyLaunching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Запуск OpenFlux...",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isEmergencyRunning) {
+                                        "Отключить экстренный обход (OpenFlux)"
+                                    } else {
+                                        "Экстренный обход (OpenFlux)"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        if (!emergencyButtonEnabled && !uiState.isEmergencyLaunching) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val hintText = when {
+                                emergencyState.status == EmergencyTransportStatus.NOT_CONFIGURED ->
+                                    "Недоступно: сначала привяжите документ в настройках"
+                                emergencyState.status == EmergencyTransportStatus.INVALID ->
+                                    "Недоступно: обновите неработающую ссылку на документ"
+                                !isWhitelistDetected ->
+                                    "Доступно только при обнаружении белых списков (проверьте сеть ниже)"
+                                else -> ""
+                            }
+                            if (hintText.isNotBlank()) {
+                                Text(
+                                    text = hintText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 }

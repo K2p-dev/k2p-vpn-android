@@ -16,6 +16,7 @@ import space.k2p.core.config.AppConfig
 import space.k2p.core.logging.AppLogger
 import space.k2p.core.logging.LogTag
 import space.k2p.core.network.WhitelistDetectorService
+import space.k2p.core.vpn.OpenFluxEngine
 import space.k2p.core.vpn.RealVpnCoreEngine
 import space.k2p.core.vpn.VpnCoreEngine
 import space.k2p.core.vpn.VpnServerNode
@@ -23,6 +24,7 @@ import space.k2p.core.vpn.VpnState
 import space.k2p.core.vpn.VpnTrafficStats
 import space.k2p.core.vpn.XrayConfigBuilder
 import space.k2p.data.api.model.DeviceItemDto
+import space.k2p.data.api.model.EmergencyTransportStatus
 import space.k2p.data.repository.ClientRepository
 import space.k2p.data.repository.SubscriptionRepository
 
@@ -38,6 +40,7 @@ data class MainUiState(
     val expiryDays: Int = 0,
     val isRefreshing: Boolean = false,
     val isPinging: Boolean = false,
+    val isEmergencyLaunching: Boolean = false,
     val devices: List<DeviceItemDto> = emptyList(),
     val maxDevices: Int = AppConfig.MAX_DEVICES,
     val isDevicesLoading: Boolean = false,
@@ -171,6 +174,7 @@ class MainViewModel(
 
         viewModelScope.launch {
             try {
+                RealVpnCoreEngine.isEmergencyMode = false
                 RealVpnCoreEngine.currentServerName = node.name
                 val configJson = XrayConfigBuilder.build(node)
                 vpnCoreEngine.start(configJson)
@@ -181,6 +185,60 @@ class MainViewModel(
                     "Ошибка запуска VPN: ${e.message}"
                 )
                 _uiState.update { it.copy(errorMessage = "Ошибка запуска VPN: ${e.message}") }
+            }
+        }
+    }
+
+    fun startEmergencyOpenFlux() {
+        if (_uiState.value.isEmergencyLaunching) return
+
+        val emergencyRepo = K2pApp.instance.emergencyTransportRepository
+        val currentEmergency = emergencyRepo.state.value
+        if (currentEmergency.status != EmergencyTransportStatus.VALID || currentEmergency.docUrl.isBlank()) {
+            _uiState.update {
+                it.copy(errorMessage = "Сначала привяжите рабочий документ в настройках экстренного обхода")
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isEmergencyLaunching = true) }
+            try {
+                val activateResult = emergencyRepo.activateOnServer()
+                if (activateResult.isFailure) {
+                    val msg = activateResult.exceptionOrNull()?.message ?: "Не удалось активировать воркер OpenFlux"
+                    _uiState.update { it.copy(isEmergencyLaunching = false, errorMessage = msg) }
+                    return@launch
+                }
+
+                val activatedState = activateResult.getOrNull() ?: currentEmergency
+                val startResult = OpenFluxEngine.start(K2pApp.instance, activatedState)
+                if (startResult.isFailure) {
+                    val msg = startResult.exceptionOrNull()?.message ?: "Не удалось запустить OpenFlux"
+                    _uiState.update { it.copy(isEmergencyLaunching = false, errorMessage = msg) }
+                    return@launch
+                }
+
+                val socksPort = startResult.getOrThrow()
+                val configJson = XrayConfigBuilder.buildForSocksUpstream(
+                    socksHost = "127.0.0.1",
+                    socksPort = socksPort,
+                    context = K2pApp.instance
+                )
+                RealVpnCoreEngine.currentServerName = "OpenFlux (${activatedState.transportType.displayName})"
+                RealVpnCoreEngine.isEmergencyMode = true
+                vpnCoreEngine.start(configJson)
+                _uiState.update { it.copy(isEmergencyLaunching = false) }
+            } catch (e: Exception) {
+                runCatching { OpenFluxEngine.stop("Ошибка запуска экстренного режима") }
+                RealVpnCoreEngine.isEmergencyMode = false
+                AppLogger.e(LogTag.OPENFLUX, "Ошибка запуска экстренного обхода OpenFlux: ${e.message}", e)
+                _uiState.update {
+                    it.copy(
+                        isEmergencyLaunching = false,
+                        errorMessage = "Ошибка экстренного обхода: ${e.message}"
+                    )
+                }
             }
         }
     }

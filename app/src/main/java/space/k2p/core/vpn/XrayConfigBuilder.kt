@@ -155,6 +155,145 @@ object XrayConfigBuilder {
         return root.toString(2)
     }
 
+    /**
+     * Builds an Xray TUN config whose "proxy" outbound points to a local SOCKS5 upstream
+     * (e.g. isolated OpenFlux child process on 127.0.0.1:<port>).
+     */
+    fun buildForSocksUpstream(
+        socksHost: String = "127.0.0.1",
+        socksPort: Int,
+        context: Context? = null,
+        bypassRussia: Boolean? = null
+    ): String {
+        val root = JSONObject()
+
+        val k2pApp = (context?.applicationContext as? space.k2p.K2pApp) ?: runCatching { space.k2p.K2pApp.instance }.getOrNull()
+        val shouldBypassPref = bypassRussia ?: k2pApp?.geodataPreferences?.isBypassRussiaCached ?: true
+
+        val hasGeodata = k2pApp?.let { app ->
+            val filesDir = app.filesDir
+            val geoip = File(filesDir, "geoip.dat")
+            val geosite = File(filesDir, "geosite.dat")
+            geoip.exists() && geoip.length() >= 50 * 1024L &&
+                geosite.exists() && geosite.length() >= 50 * 1024L
+        } ?: false
+
+        val shouldBypass = shouldBypassPref && hasGeodata
+
+        // 1. Log
+        val xrayLogFile = k2pApp?.let { File(it.filesDir, "xray_error.log").absolutePath }
+        val log = JSONObject().apply {
+            put("loglevel", "warning")
+            if (!xrayLogFile.isNullOrBlank()) {
+                put("error", xrayLogFile)
+            }
+        }
+        root.put("log", log)
+
+        // 2. DNS
+        val dns = JSONObject().apply {
+            put("servers", JSONArray(listOf("1.1.1.1", "8.8.8.8")))
+        }
+        root.put("dns", dns)
+
+        // 3. Inbounds (tun)
+        val inbounds = JSONArray()
+        val tunInbound = JSONObject().apply {
+            put("tag", "tun-in")
+            put("protocol", "tun")
+            put("settings", JSONObject().apply {
+                put("name", "xray0")
+                put("MTU", 1500)
+            })
+            put("sniffing", JSONObject().apply {
+                put("enabled", true)
+                put("destOverride", JSONArray(listOf("http", "tls", "quic")))
+                put("routeOnly", true)
+            })
+        }
+        inbounds.put(tunInbound)
+        root.put("inbounds", inbounds)
+
+        // 4. Outbounds: "proxy" switched to local OpenFlux SOCKS5
+        val outbounds = JSONArray()
+        val socksOutbound = JSONObject().apply {
+            put("tag", "proxy")
+            put("protocol", "socks")
+            put("settings", JSONObject().apply {
+                put("servers", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("address", socksHost)
+                        put("port", socksPort)
+                    })
+                })
+            })
+        }
+        outbounds.put(socksOutbound)
+
+        val directOutbound = JSONObject().apply {
+            put("tag", "direct")
+            put("protocol", "freedom")
+        }
+        outbounds.put(directOutbound)
+
+        val blockOutbound = JSONObject().apply {
+            put("tag", "block")
+            put("protocol", "blackhole")
+        }
+        outbounds.put(blockOutbound)
+
+        root.put("outbounds", outbounds)
+
+        // 5. Routing
+        val routing = JSONObject().apply {
+            put("domainStrategy", "IPIfNonMatch")
+            val rules = JSONArray()
+            if (shouldBypass) {
+                rules.put(JSONObject().apply {
+                    put("type", "field")
+                    put("ip", JSONArray(listOf("geoip:private", "geoip:ru")))
+                    put("outboundTag", "direct")
+                })
+                rules.put(JSONObject().apply {
+                    put("type", "field")
+                    put("domain", JSONArray(listOf(
+                        "geosite:ru-available-only-inside",
+                        "domain:ru",
+                        "domain:su",
+                        "domain:xn--p1ai"
+                    )))
+                    put("outboundTag", "direct")
+                })
+            } else {
+                rules.put(JSONObject().apply {
+                    put("type", "field")
+                    put("ip", JSONArray(listOf("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8")))
+                    put("outboundTag", "direct")
+                })
+            }
+            put("rules", rules)
+        }
+        root.put("routing", routing)
+
+        // 6. Stats & Policy
+        root.put("stats", JSONObject())
+        val policy = JSONObject().apply {
+            put("levels", JSONObject().apply {
+                put("0", JSONObject().apply {
+                    put("statsUserUplink", true)
+                    put("statsUserDownlink", true)
+                })
+            })
+            put("system", JSONObject().apply {
+                put("statsOutboundUplink", true)
+                put("statsOutboundDownlink", true)
+            })
+        }
+        root.put("policy", policy)
+
+        return root.toString(2)
+    }
+
     fun buildForPing(node: VpnServerNode): String {
         val root = JSONObject()
         root.put("log", JSONObject().apply { put("loglevel", "none") })

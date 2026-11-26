@@ -4,8 +4,10 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import space.k2p.core.network.WhitelistDetectorService
+import space.k2p.core.preferences.EmergencyTransportStorage
 import space.k2p.core.preferences.SplitTunnelingPreferences
 import space.k2p.core.preferences.SubscriptionPreferences
 import space.k2p.core.update.AppUpdateManager
@@ -16,6 +18,7 @@ import space.k2p.data.auth.TokenStorage
 import space.k2p.data.repository.AppUpdateRepository
 import space.k2p.data.repository.AuthRepository
 import space.k2p.data.repository.ClientRepository
+import space.k2p.data.repository.EmergencyTransportRepository
 import space.k2p.data.repository.PaymentRepository
 import space.k2p.data.repository.SubscriptionRepository
 
@@ -53,6 +56,12 @@ class K2pApp : Application() {
         private set
 
     lateinit var subscriptionRepository: SubscriptionRepository
+        private set
+
+    lateinit var emergencyTransportStorage: EmergencyTransportStorage
+        private set
+
+    lateinit var emergencyTransportRepository: EmergencyTransportRepository
         private set
 
     override fun onCreate() {
@@ -118,10 +127,29 @@ class K2pApp : Application() {
             json = networkModule.json,
             subscriptionPreferences = subscriptionPreferences
         )
+        emergencyTransportStorage = EmergencyTransportStorage(
+            context = this,
+            json = networkModule.json
+        )
+        emergencyTransportRepository = EmergencyTransportRepository(
+            context = this,
+            apiService = networkModule.clientApiService,
+            tokenStorage = tokenStorage,
+            storage = emergencyTransportStorage,
+            json = networkModule.json
+        ).apply {
+            ensureNotificationChannel()
+        }
 
-        // Check for app updates on startup
+        // Check for app updates and sync emergency transport state on startup
         appScope.launch {
             appUpdateManager.checkForUpdate()
+        }
+        appScope.launch {
+            emergencyTransportRepository.initFromStorage()
+            if (!tokenStorage.tokenFlow.firstOrNull().isNullOrBlank()) {
+                emergencyTransportRepository.syncFromServer()
+            }
         }
 
         // Schedule periodic 24h background workers for geodata and app updates

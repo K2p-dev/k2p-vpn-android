@@ -15,6 +15,7 @@ import space.k2p.ui.screens.debug.DebugLogScreen
 import space.k2p.ui.screens.main.MainScreen
 import space.k2p.ui.screens.profile.ProfileScreen
 import space.k2p.ui.screens.profile.ProfileViewModel
+import space.k2p.ui.screens.settings.EmergencyBypassSettingsScreen
 import space.k2p.ui.screens.settings.SettingsScreen
 import space.k2p.ui.screens.settings.SettingsViewModel
 import space.k2p.ui.screens.tariffs.TariffsScreen
@@ -61,7 +62,8 @@ fun K2pNavHost(
                 onNavigateToTariffs = { navController.navigate(Screen.Tariffs.route) },
                 onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                onNavigateToUpdate = { navController.navigate(Screen.Update.route) }
+                onNavigateToUpdate = { navController.navigate(Screen.Update.route) },
+                onNavigateToEmergencyBypass = { navController.navigate(Screen.EmergencyBypassSettings.route) }
             )
         }
 
@@ -110,7 +112,8 @@ fun K2pNavHost(
                 viewModel = settingsViewModel,
                 onBack = { navController.popBackStack() },
                 onNavigateToUpdate = { navController.navigate(Screen.Update.route) },
-                onNavigateToDebugLogs = { navController.navigate(Screen.DebugLogs.route) }
+                onNavigateToDebugLogs = { navController.navigate(Screen.DebugLogs.route) },
+                onNavigateToEmergencyBypass = { navController.navigate(Screen.EmergencyBypassSettings.route) }
             )
         }
 
@@ -122,6 +125,12 @@ fun K2pNavHost(
 
         composable(Screen.DebugLogs.route) {
             DebugLogScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.EmergencyBypassSettings.route) {
+            EmergencyBypassSettingsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

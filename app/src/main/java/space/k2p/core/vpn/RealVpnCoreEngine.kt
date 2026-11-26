@@ -17,6 +17,7 @@ class RealVpnCoreEngine(private val context: Context) : VpnCoreEngine {
         val internalState = MutableStateFlow(VpnState.DISCONNECTED)
         val internalStats = MutableStateFlow(VpnTrafficStats())
         var currentServerName: String = ""
+        var isEmergencyMode: Boolean = false
     }
 
     override val state: StateFlow<VpnState> = internalState.asStateFlow()
@@ -28,6 +29,7 @@ class RealVpnCoreEngine(private val context: Context) : VpnCoreEngine {
             action = K2pVpnService.ACTION_CONNECT
             putExtra(K2pVpnService.EXTRA_CONFIG_JSON, configJson)
             putExtra(K2pVpnService.EXTRA_SERVER_NAME, currentServerName)
+            putExtra(K2pVpnService.EXTRA_EMERGENCY_MODE, isEmergencyMode)
         }
         ContextCompat.startForegroundService(context, intent)
     }

@@ -20,6 +20,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -42,7 +43,10 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_QUICK_CONNECT = "space.k2p.action.QUICK_CONNECT"
+        const val ACTION_OPEN_EMERGENCY_BYPASS = "space.k2p.action.OPEN_EMERGENCY_BYPASS"
     }
+
+    private val pendingNavigationRoute = MutableStateFlow<String?>(null)
 
     private val vpnPrepareLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -69,11 +73,13 @@ class MainActivity : ComponentActivity() {
         }
 
         handleQuickConnectIntent(intent)
+        handleNavigationIntent(intent)
 
         setContent {
             val themeConfig by themePreferences.themeConfigFlow
                 .collectAsState(initial = ThemeConfig())
             val navController = rememberNavController()
+            val pendingRoute by pendingNavigationRoute.collectAsState()
 
             val isDark = when (themeConfig.themeMode) {
                 ThemeMode.DARK -> true
@@ -84,6 +90,16 @@ class MainActivity : ComponentActivity() {
             DisposableEffect(isDark) {
                 WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = !isDark
                 onDispose { }
+            }
+
+            LaunchedEffect(pendingRoute, initialToken) {
+                val target = pendingRoute
+                if (!target.isNullOrBlank() && !initialToken.isNullOrBlank()) {
+                    navController.navigate(target) {
+                        launchSingleTop = true
+                    }
+                    pendingNavigationRoute.value = null
+                }
             }
 
             LaunchedEffect(Unit) {
@@ -121,6 +137,7 @@ class MainActivity : ComponentActivity() {
             val token = K2pApp.instance.tokenStorage.tokenFlow.firstOrNull()
             if (!token.isNullOrBlank()) {
                 K2pApp.instance.subscriptionRepository.refreshSubscription(force = false)
+                K2pApp.instance.emergencyTransportRepository.syncFromServer()
             }
         }
     }
@@ -129,6 +146,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleQuickConnectIntent(intent)
+        handleNavigationIntent(intent)
+    }
+
+    private fun handleNavigationIntent(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_EMERGENCY_BYPASS) {
+            pendingNavigationRoute.value = Screen.EmergencyBypassSettings.route
+        }
     }
 
     private fun handleQuickConnectIntent(intent: Intent?) {
@@ -158,11 +182,13 @@ class MainActivity : ComponentActivity() {
             val targetNode = nodes.firstOrNull { it.id == selectedId } ?: nodes.firstOrNull()
             if (targetNode != null) {
                 RealVpnCoreEngine.currentServerName = targetNode.name
+                RealVpnCoreEngine.isEmergencyMode = false
                 val configJson = XrayConfigBuilder.build(targetNode)
                 val intent = Intent(this@MainActivity, K2pVpnService::class.java).apply {
                     action = K2pVpnService.ACTION_CONNECT
                     putExtra(K2pVpnService.EXTRA_CONFIG_JSON, configJson)
                     putExtra(K2pVpnService.EXTRA_SERVER_NAME, targetNode.name)
+                    putExtra(K2pVpnService.EXTRA_EMERGENCY_MODE, false)
                 }
                 ContextCompat.startForegroundService(this@MainActivity, intent)
             }
