@@ -297,7 +297,8 @@ object XrayConfigBuilder {
     fun buildForPing(node: VpnServerNode): String {
         val root = JSONObject()
         root.put("log", JSONObject().apply { put("loglevel", "none") })
-        root.put("dns", JSONObject().apply { put("servers", JSONArray(listOf("1.1.1.1", "8.8.8.8"))) })
+        // Use Android OS system DNS ("localhost") so LTE/carrier DNS resolves server domains without blocked UDP:53 to 1.1.1.1
+        root.put("dns", JSONObject().apply { put("servers", JSONArray(listOf("localhost"))) })
 
         val outbounds = JSONArray()
         val proxy = if (node.protocol.equals("hysteria", ignoreCase = true) ||
@@ -317,6 +318,10 @@ object XrayConfigBuilder {
         outbounds.put(direct)
 
         root.put("outbounds", outbounds)
+        root.put("routing", JSONObject().apply {
+            put("domainStrategy", "AsIs")
+            put("rules", JSONArray())
+        })
         return root.toString()
     }
 
@@ -329,13 +334,13 @@ object XrayConfigBuilder {
         val settings = JSONObject()
         val vnext = JSONArray()
         val serverObj = JSONObject().apply {
-            put("address", node.host)
+            put("address", node.host.removePrefix("[").removeSuffix("]"))
             put("port", node.port)
 
             val users = JSONArray()
             val user = JSONObject().apply {
                 put("id", node.uuidOrPassword)
-                put("encryption", "none")
+                put("encryption", node.encryption?.takeIf { it.isNotBlank() } ?: "none")
                 if (!node.flow.isNullOrBlank()) {
                     put("flow", node.flow)
                 }
@@ -349,55 +354,81 @@ object XrayConfigBuilder {
 
         // streamSettings
         val streamSettings = JSONObject()
-        streamSettings.put("network", "xhttp")
+        val rawNetwork = node.network?.lowercase(java.util.Locale.ROOT)
+        val normalizedNetwork = when (rawNetwork) {
+            null, "", "splithttp", "xhttp" -> "xhttp"
+            else -> rawNetwork
+        }
+        streamSettings.put("network", normalizedNetwork)
 
-        // xhttpSettings
-        val xhttpSettings = JSONObject()
-        val rawPath = node.path?.takeIf { it.isNotBlank() } ?: "/"
-        val decodedPath = try {
-            URLDecoder.decode(rawPath, StandardCharsets.UTF_8.name())
-        } catch (_: Exception) {
-            rawPath
-        }
-        xhttpSettings.put("path", decodedPath)
+        if (normalizedNetwork == "xhttp") {
+            val xhttpSettings = JSONObject()
+            val rawPath = node.path?.takeIf { it.isNotBlank() } ?: "/"
+            xhttpSettings.put("path", decodeUrlValueSafely(rawPath))
 
-        if (!node.hostHeader.isNullOrBlank()) {
-            xhttpSettings.put("host", node.hostHeader)
-        }
-        if (!node.xhttpMode.isNullOrBlank()) {
-            xhttpSettings.put("mode", node.xhttpMode)
-        }
-        if (!node.xhttpExtra.isNullOrBlank()) {
-            try {
-                val decodedExtra = URLDecoder.decode(node.xhttpExtra, StandardCharsets.UTF_8.name())
-                val extraJson = JSONObject(decodedExtra)
-                xhttpSettings.put("extra", extraJson)
-            } catch (_: Exception) {
-                // If not valid JSON, ignore or fallback
+            if (!node.hostHeader.isNullOrBlank()) {
+                xhttpSettings.put("host", decodeUrlValueSafely(node.hostHeader.trim()))
             }
-        }
-        streamSettings.put("xhttpSettings", xhttpSettings)
 
-        // reality
-        streamSettings.put("security", "reality")
-        val realitySettings = JSONObject().apply {
-            put("serverName", node.sni ?: node.host)
-            put("fingerprint", node.fp?.takeIf { it.isNotBlank() } ?: "chrome")
-            put("publicKey", node.pbk ?: "")
-            put("shortId", node.sid ?: "")
+            xhttpSettings.put("mode", node.xhttpMode?.takeIf { it.isNotBlank() } ?: "auto")
 
-            val rawSpx = node.spx?.takeIf { it.isNotBlank() } ?: "/"
-            val decodedSpx = try {
-                URLDecoder.decode(rawSpx, StandardCharsets.UTF_8.name())
-            } catch (_: Exception) {
-                rawSpx
+            if (!node.xhttpExtra.isNullOrBlank()) {
+                parseExtraJson(node.xhttpExtra)?.let { extraJson ->
+                    xhttpSettings.put("extra", extraJson)
+                }
             }
-            put("spiderX", decodedSpx)
+            streamSettings.put("xhttpSettings", xhttpSettings)
         }
-        streamSettings.put("realitySettings", realitySettings)
+
+        // security: reality (default) or tls
+        val serverName = node.sni?.takeIf { it.isNotBlank() } ?: node.host
+        val fingerprint = node.fp?.takeIf { it.isNotBlank() } ?: "chrome"
+        if (node.security.equals("tls", ignoreCase = true) && node.pbk.isNullOrBlank()) {
+            streamSettings.put("security", "tls")
+            streamSettings.put("tlsSettings", JSONObject().apply {
+                put("serverName", serverName)
+                put("fingerprint", fingerprint)
+            })
+        } else {
+            streamSettings.put("security", "reality")
+            val realitySettings = JSONObject().apply {
+                put("serverName", serverName)
+                put("fingerprint", fingerprint)
+                put("publicKey", node.pbk.orEmpty())
+                put("shortId", node.sid.orEmpty())
+
+                val rawSpx = node.spx?.takeIf { it.isNotBlank() } ?: "/"
+                put("spiderX", decodeUrlValueSafely(rawSpx))
+            }
+            streamSettings.put("realitySettings", realitySettings)
+        }
 
         outbound.put("streamSettings", streamSettings)
         return outbound
+    }
+
+    private fun decodeUrlValueSafely(raw: String): String {
+        if (!raw.contains('%')) return raw
+        return try {
+            val safe = raw.replace("+", "%2B")
+            URLDecoder.decode(safe, StandardCharsets.UTF_8.name())
+        } catch (_: Exception) {
+            raw
+        }
+    }
+
+    private fun parseExtraJson(rawExtra: String): JSONObject? {
+        val trimmed = rawExtra.trim()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.startsWith("{")) {
+            return runCatching { JSONObject(trimmed) }.getOrNull()
+        }
+        val decodedOnce = decodeUrlValueSafely(trimmed).trim()
+        if (decodedOnce.startsWith("{")) {
+            return runCatching { JSONObject(decodedOnce) }.getOrNull()
+        }
+        val decodedTwice = decodeUrlValueSafely(decodedOnce).trim()
+        return runCatching { JSONObject(decodedTwice) }.getOrNull()
     }
 
     private fun buildHysteria2Outbound(node: VpnServerNode): JSONObject {

@@ -15,7 +15,8 @@ enum class LogTag(val label: String) {
     WHITELIST("WHITELIST"),
     OTA("OTA"),
     API("API"),
-    NET("NET")
+    NET("NET"),
+    PING("PING")
 }
 
 enum class LogLevel(val label: String) {
@@ -48,7 +49,7 @@ data class LogEntry(
             LogCategory.XRAY -> tag == LogTag.XRAY || tag == LogTag.VPN
             LogCategory.OPENFLUX -> tag == LogTag.OPENFLUX
             LogCategory.WHITELIST -> tag == LogTag.WHITELIST
-            LogCategory.NETWORK_API -> tag == LogTag.API || tag == LogTag.NET || tag == LogTag.OTA
+            LogCategory.NETWORK_API -> tag == LogTag.API || tag == LogTag.NET || tag == LogTag.PING || tag == LogTag.OTA
         }
     }
 }
@@ -80,15 +81,21 @@ object AppLogger {
     }
 
     private val bearerRegex = Regex("(?i)(Bearer\\s+)[A-Za-z0-9._-]+")
-    private val secretFieldRegex = Regex("(?i)(\"(?:session_secret|token|jwt|password)\"\\s*:\\s*\")[^\"]+(\")")
-    private val kvSecretRegex = Regex("(?i)((?:session_secret|SessionContext|EncryptionKeyFile|doc_url)\\s*[=:]\\s*)\\S+")
+    private val uuidRegex = Regex("\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b")
+    private val secretFieldRegex = Regex("(?i)(\"(?:session_secret|token|jwt|password|publicKey|shortId|auth)\"\\s*:\\s*\")[^\"]+(\")")
+    private val kvSecretRegex = Regex("(?i)((?:session_secret|SessionContext|EncryptionKeyFile|doc_url|publicKey|shortId)\\s*[=:]\\s*)\\S+")
+    private val querySecretRegex = Regex("(?i)([?&](?:pbk|sid|password|token|session_secret)=)[^&\\s\"']+")
+    private val proxyUriUserinfoRegex = Regex("(?i)((?:vless|hysteria2|hy2)://)[^@\\s]+@")
     private val docUrlRegex = Regex("https://(?:[a-zA-Z0-9-]+\\.)*(?:yandex\\.(?:ru|com)|yadi\\.sk|mail\\.ru)/\\S*")
 
     internal fun redact(input: String): String {
         return input
             .replace(bearerRegex, "$1***")
+            .replace(uuidRegex, "***-***-***")
             .replace(secretFieldRegex, "$1***$2")
             .replace(kvSecretRegex, "$1***")
+            .replace(querySecretRegex, "$1***")
+            .replace(proxyUriUserinfoRegex, "$1***@")
             .replace(docUrlRegex) { match ->
                 val url = match.value
                 val hostEnd = url.indexOf('/', startIndex = "https://".length)

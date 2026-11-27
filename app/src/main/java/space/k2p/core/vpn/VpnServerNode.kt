@@ -18,6 +18,9 @@ data class VpnServerNode(
     val port: Int,
     val uuidOrPassword: String,
     // VLESS parameters
+    val network: String? = null,
+    val security: String? = null,
+    val encryption: String? = null,
     val flow: String? = null,
     val sni: String? = null,
     val pbk: String? = null,

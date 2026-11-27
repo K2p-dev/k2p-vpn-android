@@ -1,8 +1,11 @@
 package space.k2p.data.repository
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -16,6 +19,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import libv2ray.Libv2ray
@@ -38,8 +43,13 @@ class SubscriptionRepository(
     private val okHttpClient: OkHttpClient,
     private val json: Json,
     private val subscriptionPreferences: SubscriptionPreferences,
-    private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.IO)
+    private val externalScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) {
+    companion object {
+        private const val PING_PROBE_URL = "http://www.gstatic.com/generate_204"
+        private const val PING_TIMEOUT_MS = 3800L
+        private const val PING_CONCURRENCY = 3
+    }
     private val _nodes = MutableStateFlow<List<VpnServerNode>>(emptyList())
     val nodes: StateFlow<List<VpnServerNode>> = _nodes.asStateFlow()
 
@@ -82,9 +92,20 @@ class SubscriptionRepository(
         _isSubscriptionActive.value = cachedStatus == "premium" || cachedStatus == "active"
 
         if (!cachedJson.isNullOrBlank()) {
-            val list = runCatching {
+            val rawList = runCatching {
                 json.decodeFromString<List<VpnServerNode>>(cachedJson)
             }.getOrDefault(emptyList())
+
+            val list = rawList.map { cached ->
+                if (cached.rawUri.isNotBlank()) {
+                    SubscriptionParser.parseNodes(cached.rawUri).firstOrNull()?.copy(
+                        id = cached.id,
+                        pingMs = cached.pingMs
+                    ) ?: cached
+                } else {
+                    cached
+                }
+            }
 
             if (list.isNotEmpty()) {
                 _nodes.value = list
@@ -205,16 +226,53 @@ class SubscriptionRepository(
     suspend fun measurePing(node: VpnServerNode): Long = withContext(Dispatchers.IO) {
         val delay = try {
             val pingConfig = XrayConfigBuilder.buildForPing(node)
-            val d = Libv2ray.measureOutboundDelay(pingConfig, "http://www.gstatic.com/generate_204")
-            if (d > 0) {
-                AppLogger.d(LogTag.NET, "Пинг ${node.name} (${node.host}): ${d} мс")
-                d
-            } else {
-                AppLogger.w(LogTag.NET, "Пинг ${node.name} (${node.host}): -1 (нет ответа)")
-                -1L
+            val resultDeferred = CompletableDeferred<Long>()
+            externalScope.launch(Dispatchers.IO) {
+                val d = try {
+                    Libv2ray.measureOutboundDelay(pingConfig, PING_PROBE_URL)
+                } catch (e: Exception) {
+                    AppLogger.w(
+                        LogTag.PING,
+                        "Ошибка Real Delay ${node.name} (${node.host}:${node.port}): ${e.message ?: e.javaClass.simpleName}"
+                    )
+                    -1L
+                }
+                resultDeferred.complete(d)
             }
+            val measured = withTimeoutOrNull(PING_TIMEOUT_MS.milliseconds) {
+                resultDeferred.await()
+            }
+
+            when {
+                measured == null -> {
+                    AppLogger.w(
+                        LogTag.PING,
+                        "Таймаут пинга ${node.name} (${node.host}:${node.port}) > ${PING_TIMEOUT_MS} мс"
+                    )
+                    -1L
+                }
+                measured > 0L -> {
+                    AppLogger.d(
+                        LogTag.PING,
+                        "Пинг ${node.name} (${node.host}:${node.port}): ${measured} мс"
+                    )
+                    measured
+                }
+                else -> {
+                    AppLogger.w(
+                        LogTag.PING,
+                        "Пинг ${node.name} (${node.host}:${node.port}): -1 (нет HTTP 204 ответа)"
+                    )
+                    -1L
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            AppLogger.w(LogTag.NET, "Ошибка пинга ${node.name} (${node.host}): ping=-1 (${e.message})")
+            AppLogger.w(
+                LogTag.PING,
+                "Ошибка пинга ${node.name} (${node.host}:${node.port}): ping=-1 (${e.message ?: e.javaClass.simpleName})"
+            )
             -1L
         }
         updateNodePing(node.id, delay)
@@ -231,7 +289,7 @@ class SubscriptionRepository(
         val currentNodes = _nodes.value
         if (currentNodes.isEmpty()) return@withContext
 
-        val semaphore = Semaphore(4)
+        val semaphore = Semaphore(PING_CONCURRENCY)
         coroutineScope {
             currentNodes.map { node ->
                 async {

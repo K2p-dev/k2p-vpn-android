@@ -161,8 +161,8 @@ object SubscriptionParser {
     }
 
     private fun parseVless(rawUri: String, uri: Uri): VpnServerNode {
-        val uuid = uri.userInfo.orEmpty()
-        val host = uri.host.orEmpty()
+        val uuid = decodeSafeUrl(uri.userInfo.orEmpty())
+        val host = uri.host.orEmpty().removePrefix("[").removeSuffix("]")
         val port = if (uri.port > 0) uri.port else 443
 
         val rawFragment = if (rawUri.contains("#")) {
@@ -172,31 +172,48 @@ object SubscriptionParser {
         }
         val decodedRawName = decodeSafeUrl(rawFragment).ifBlank { "$host:$port" }
 
-        val flow = uri.getQueryParameter("flow")
-        val sni = uri.getQueryParameter("sni")
-        val pbk = uri.getQueryParameter("pbk")
-        val sid = uri.getQueryParameter("sid")
-        val spx = uri.getQueryParameter("spx")
-        val path = uri.getQueryParameter("path")
-        val hostHeader = uri.getQueryParameter("host")
-        val xhttpMode = uri.getQueryParameter("mode")
-        val xhttpExtra = uri.getQueryParameter("extra")
-        val fp = uri.getQueryParameter("fp")
+        val queryParams = parseRawQueryParams(rawUri)
+        val rawType = queryParams["type"]?.lowercase(Locale.ROOT)
+        val normalizedNetwork = when (rawType) {
+            "splithttp", "xhttp", null, "" -> "xhttp"
+            else -> rawType
+        }
+        val security = queryParams["security"]?.lowercase(Locale.ROOT)?.takeIf { it.isNotBlank() } ?: "reality"
+        val encryption = queryParams["encryption"]?.takeIf { it.isNotBlank() } ?: "none"
+
+        val flow = queryParams["flow"]?.takeIf { it.isNotBlank() }
+        val sni = queryParams["sni"]?.takeIf { it.isNotBlank() }
+        val pbk = queryParams["pbk"]?.takeIf { it.isNotBlank() }
+        val sid = queryParams["sid"]?.takeIf { it.isNotBlank() }
+        val spx = queryParams["spx"]?.takeIf { it.isNotBlank() }
+        val path = queryParams["path"]?.takeIf { it.isNotBlank() }
+        val hostHeader = queryParams["host"]?.takeIf { it.isNotBlank() }
+        val xhttpMode = queryParams["mode"]?.takeIf { it.isNotBlank() }
+        val xhttpExtra = queryParams["extra"]?.takeIf { it.isNotBlank() }
+        val fp = queryParams["fp"]?.takeIf { it.isNotBlank() }
 
         val info = processServerNodeName(decodedRawName, host)
+        val transportLabel = when (normalizedNetwork) {
+            "xhttp" -> "XHTTP"
+            else -> normalizedNetwork.uppercase(Locale.ROOT)
+        }
+        val securityLabel = security.uppercase(Locale.ROOT)
 
         return VpnServerNode(
             id = rawUri.hashCode().toString(),
             name = info.finalName,
             flagEmoji = info.flagEmoji,
             countryName = info.country,
-            protocolLabel = "VLESS • XHTTP • REALITY",
+            protocolLabel = "VLESS • $transportLabel • $securityLabel",
             isLte = info.isLte,
             rawUri = rawUri,
             protocol = "vless",
             host = host,
             port = port,
             uuidOrPassword = uuid,
+            network = normalizedNetwork,
+            security = security,
+            encryption = encryption,
             flow = flow,
             sni = sni,
             pbk = pbk,
@@ -208,6 +225,26 @@ object SubscriptionParser {
             xhttpExtra = xhttpExtra,
             fp = fp
         )
+    }
+
+    private fun parseRawQueryParams(rawUri: String): Map<String, String> {
+        val afterQuestion = rawUri.substringAfter('?', "")
+        if (afterQuestion.isBlank()) return emptyMap()
+        val queryPart = afterQuestion.substringBefore('#')
+        if (queryPart.isBlank()) return emptyMap()
+
+        val result = LinkedHashMap<String, String>()
+        for (pair in queryPart.split('&')) {
+            if (pair.isEmpty()) continue
+            val eqIdx = pair.indexOf('=')
+            val rawKey = if (eqIdx >= 0) pair.substring(0, eqIdx) else pair
+            val rawVal = if (eqIdx >= 0) pair.substring(eqIdx + 1) else ""
+            val key = decodeSafeUrl(rawKey).trim().lowercase(Locale.ROOT)
+            if (key.isNotEmpty()) {
+                result[key] = decodeSafeUrl(rawVal)
+            }
+        }
+        return result
     }
 
     private fun parseHysteria2(rawUri: String, uri: Uri): VpnServerNode {

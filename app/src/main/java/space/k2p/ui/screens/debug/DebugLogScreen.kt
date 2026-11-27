@@ -348,6 +348,7 @@ private fun LogEntryRow(entry: LogEntry) {
         LogTag.OTA -> Color(0xFFFFA726)
         LogTag.API -> Color(0xFF42A5F5)
         LogTag.NET -> Color(0xFF66BB6A)
+        LogTag.PING -> Color(0xFF26C6DA)
     }
 
     val messageColor = when (entry.level) {

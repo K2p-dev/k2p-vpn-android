@@ -84,11 +84,13 @@ object OpenFluxEngine {
         var secretFile: File? = null
         if (secret.length >= 16) {
             secretFile = File(workDir, "session.key").apply {
-                writeText(secret, Charsets.UTF_8)
+                if (exists()) delete()
+                createNewFile()
                 setReadable(false, false)
                 setReadable(true, true)
                 setWritable(false, false)
                 setWritable(true, true)
+                writeText(secret, Charsets.UTF_8)
             }
         } else if (secret.isNotBlank()) {
             AppLogger.w(
@@ -114,11 +116,13 @@ object OpenFluxEngine {
             appendLine("Debug = 2")
         }
         confFile.apply {
-            writeText(confContent, Charsets.UTF_8)
+            if (exists()) delete()
+            createNewFile()
             setReadable(false, false)
             setReadable(true, true)
             setWritable(false, false)
             setWritable(true, true)
+            writeText(confContent, Charsets.UTF_8)
         }
 
         val dnsServer = resolvePhysicalDns(context)
@@ -175,6 +179,10 @@ object OpenFluxEngine {
                     }
                     if (process === proc) {
                         process = null
+                        workDirRef?.let { dir ->
+                            runCatching { File(dir, "openflux.conf").delete() }
+                            runCatching { File(dir, "session.key").delete() }
+                        }
                         _state.value = OpenFluxProcessState(isRunning = false)
                     }
                 }

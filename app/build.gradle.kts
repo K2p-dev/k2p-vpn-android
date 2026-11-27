@@ -12,8 +12,8 @@ android {
         applicationId = "space.k2p"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.6.6-beta-fix"
+        versionCode = 14
+        versionName = "0.6.7-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
